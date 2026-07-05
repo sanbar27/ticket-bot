@@ -1164,4 +1164,9 @@ process.on('unhandledRejection', error => {
 });
 
 // ===================== START BOT =====================
+// ===================== START BOT =====================
+console.log('🔄 Attempting to connect to Discord...');
+console.log('📝 Token length:', BOT_TOKEN ? BOT_TOKEN.length : 'MISSING');
+console.log('📝 Token starts with:', BOT_TOKEN ? BOT_TOKEN.substring(0, 10) + '...' : 'N/A');
+
 client.login(BOT_TOKEN);
