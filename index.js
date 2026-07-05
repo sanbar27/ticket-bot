@@ -23,14 +23,13 @@ const path = require('path');
 // ===================== CHECK TOKEN =====================
 const BOT_TOKEN = process.env.DISCORD_TOKEN;
 if (!BOT_TOKEN) {
-    console.error('❌ DISCORD_TOKEN is missing! Add it to Railway Variables');
+    console.error('❌ DISCORD_TOKEN is missing!');
     process.exit(1);
 }
 
 // ===================== FILE-BASED STORAGE =====================
 const CONFIG_FILE = path.join(__dirname, 'config.json');
 
-// Load config from file or create default
 function loadConfig() {
     try {
         if (fs.existsSync(CONFIG_FILE)) {
@@ -43,7 +42,6 @@ function loadConfig() {
     return {};
 }
 
-// Save config to file
 function saveConfig(config) {
     try {
         fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2));
@@ -52,7 +50,6 @@ function saveConfig(config) {
     }
 }
 
-// Get server config with defaults
 function getServerConfig(guildId) {
     const allConfigs = loadConfig();
     if (!allConfigs[guildId]) {
@@ -74,7 +71,6 @@ function getServerConfig(guildId) {
     return allConfigs[guildId];
 }
 
-// Update server config
 async function updateServerConfig(guildId, updates) {
     const allConfigs = loadConfig();
     if (!allConfigs[guildId]) {
@@ -97,7 +93,7 @@ async function updateServerConfig(guildId, updates) {
     return allConfigs[guildId];
 }
 
-// ===================== CLIENT INIT - FIXED INTENTS =====================
+// ===================== CLIENT INIT =====================
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
@@ -135,6 +131,7 @@ async function sendTicketLog(guild, conf, title, description, color) {
 const activeTrades = new Map();
 const activeVouchTimers = new Map();
 const afkUsers = new Map();
+const cooldowns = new Map();
 
 const FAUX_TRADES = [
     "ROBUX: 5000 R$ W/T TAX FOR 20$ LTC",
@@ -147,7 +144,11 @@ const FAUX_TRADES = [
     "ADOPT ME: NFR SHADOW DRAGON FOR 80$ BTC",
     "VALORANT: 2500 VP CARD FOR 15$ PAYPAL",
     "DISCORD: 1 YEAR NITRO BOOST FOR 12$ CARD",
-    "STEAM: 50$ GIFT CARD FOR 40$ CRYPTO"
+    "STEAM: 50$ GIFT CARD FOR 40$ CRYPTO",
+    "GROW A GARDEN: DRAGONFLY FOR 10$ LTC",
+    "BLOX FRUITS: PERM KITSUNE FOR 24$ LTC",
+    "ROBUX: 20k R$ CLEAN FOR 80$ BTC",
+    "ADOPT ME: MEGA FROST DRAGON FOR 120$ SOL"
 ];
 
 // ===================== ANTI-NUKE =====================
@@ -197,21 +198,34 @@ async function generateFakeVouch(guildId) {
     if (!guild) return;
     
     const conf = getServerConfig(guildId);
-    if (!conf.vouchChannelId || !conf.targetRoleId || !conf.giverRoleId) return;
+    if (!conf.vouchChannelId || !conf.targetRoleId || !conf.giverRoleId) {
+        console.log(`⚠️ Auto-vouch not fully configured for ${guildId}`);
+        return;
+    }
     
     const channel = guild.channels.cache.get(conf.vouchChannelId);
-    if (!channel) return;
+    if (!channel) {
+        console.log(`⚠️ Vouch channel not found for ${guildId}`);
+        return;
+    }
 
     try {
         await guild.members.fetch();
         const targets = guild.roles.cache.get(conf.targetRoleId)?.members;
         const givers = guild.roles.cache.get(conf.giverRoleId)?.members;
         
-        if (!targets || targets.size === 0 || !givers || givers.size === 0) return;
+        if (!targets || targets.size === 0 || !givers || givers.size === 0) {
+            console.log(`⚠️ No members found in roles for ${guildId}`);
+            return;
+        }
 
-        const randomTarget = targets.random().user;
-        const randomGiver = givers.random().user;
-        if (randomTarget.id === randomGiver.id) return;
+        const targetArray = [...targets.values()];
+        const giverArray = [...givers.values()];
+        
+        const randomTarget = targetArray[Math.floor(Math.random() * targetArray.length)];
+        const randomGiver = giverArray[Math.floor(Math.random() * giverArray.length)];
+        
+        if (!randomTarget || !randomGiver || randomTarget.id === randomGiver.id) return;
 
         const randomTrade = FAUX_TRADES[Math.floor(Math.random() * FAUX_TRADES.length)];
         const embed = new EmbedBuilder()
@@ -223,7 +237,7 @@ async function generateFakeVouch(guildId) {
                 `📦 **Transaction:** \`${randomTrade}\``
             )
             .setThumbnail(randomGiver.displayAvatarURL({ dynamic: true, size: 256 }))
-            .setFooter({ text: 'Cosmic Vouch System' })
+            .setFooter({ text: 'Cosmic Vouch System', iconURL: guild.iconURL({ dynamic: true }) })
             .setTimestamp();
 
         const btn = new ButtonBuilder()
@@ -235,6 +249,7 @@ async function generateFakeVouch(guildId) {
             embeds: [embed], 
             components: [new ActionRowBuilder().addComponents(btn)] 
         });
+        console.log(`✅ Auto-vouch posted in ${guild.name}`);
     } catch (e) {
         console.error('Error generating vouch:', e);
     }
@@ -243,6 +258,7 @@ async function generateFakeVouch(guildId) {
 function startVouchLoop(guildId) {
     stopVouchLoop(guildId);
     const conf = getServerConfig(guildId);
+    console.log(`🔄 Starting auto-vouch loop for ${guildId} (interval: ${conf.intervalTime/1000}s)`);
     const timer = setInterval(() => generateFakeVouch(guildId), conf.intervalTime);
     activeVouchTimers.set(guildId, timer);
 }
@@ -251,6 +267,7 @@ function stopVouchLoop(guildId) {
     if (activeVouchTimers.has(guildId)) {
         clearInterval(activeVouchTimers.get(guildId));
         activeVouchTimers.delete(guildId);
+        console.log(`🛑 Stopped auto-vouch loop for ${guildId}`);
     }
 }
 
@@ -280,7 +297,8 @@ async function getDashboard(guildId, pageName) {
                     `**Staff Role:** ${conf.staffRoleId ? `<@&${conf.staffRoleId}>` : '❌ Not Set'}\n` +
                     `**Category:** ${conf.ticketCategoryId ? `<#${conf.ticketCategoryId}>` : '❌ Not Set'}\n` +
                     `**Logs:** ${conf.logChannelId ? `<#${conf.logChannelId}>` : '❌ Not Set'}\n\n` +
-                    `**Auto-Vouch Status:** ${conf.running ? '🟢 Running' : '🔴 Stopped'}`
+                    `**Auto-Vouch Status:** ${conf.running ? '🟢 Running' : '🔴 Stopped'}\n` +
+                    `**Vouch Channel:** ${conf.vouchChannelId ? `<#${conf.vouchChannelId}>` : '❌ Not Set'}`
                 );
             components = [
                 navRow,
@@ -325,7 +343,12 @@ async function getDashboard(guildId, pageName) {
 
         case 'vouch_setup':
             embed.setTitle('🎫 Vouch Configuration')
-                .setDescription(`**Current Interval:** \`${conf.intervalTime / 1000}s\``);
+                .setDescription(
+                    `**Current Interval:** \`${conf.intervalTime / 1000}s\`\n\n` +
+                    `**Target Role (Receives):** ${conf.targetRoleId ? `<@&${conf.targetRoleId}>` : '❌ Not Set'}\n` +
+                    `**Giver Role (Gives):** ${conf.giverRoleId ? `<@&${conf.giverRoleId}>` : '❌ Not Set'}\n` +
+                    `**Vouch Channel:** ${conf.vouchChannelId ? `<#${conf.vouchChannelId}>` : '❌ Not Set'}`
+                );
             components = [
                 navRow,
                 new ActionRowBuilder().addComponents(
@@ -383,7 +406,11 @@ async function getDashboard(guildId, pageName) {
                     `> \`${conf.prefix}close\` - Close current ticket\n\n` +
                     `**⚙️ Configuration**\n` +
                     `> \`${conf.prefix}whitelist @user\` - Manage permissions\n` +
-                    `> \`${conf.prefix}afk\` - Toggle AFK mode`
+                    `> \`${conf.prefix}afk\` - Toggle AFK mode\n\n` +
+                    `**🎫 Auto-Vouch**\n` +
+                    `> \`${conf.prefix}vouch start\` - Start auto-vouch\n` +
+                    `> \`${conf.prefix}vouch stop\` - Stop auto-vouch\n` +
+                    `> \`${conf.prefix}vouch status\` - Check vouch status`
                 );
             components = [navRow];
             break;
@@ -456,6 +483,133 @@ client.on('messageCreate', async (message) => {
         }
     });
 
+    // Ticket System
+    if (message.channel.name.startsWith('mm-')) {
+        let tradeState = activeTrades.get(message.channel.id);
+        if (!tradeState) {
+            const creatorName = message.channel.name.replace('mm-', '');
+            if (message.author.username.toLowerCase().replace(/[^a-z0-9]/g, '') === creatorName) {
+                tradeState = {
+                    trader1Id: message.author.id,
+                    trader2Id: null,
+                    step: 'AWAITING_TRADER2',
+                    dealDetails: null,
+                    claimedBy: null,
+                    confirmationEmbedMessageId: null
+                };
+                activeTrades.set(message.channel.id, tradeState);
+            }
+        }
+
+        if (tradeState && tradeState.step === 'AWAITING_TRADER2' && 
+            message.author.id === tradeState.trader1Id && !message.content.startsWith(prefix)) {
+            
+            const targetInput = message.content.replace(/[<@!>]/g, '').trim();
+            let targetMember = await message.guild.members.fetch(targetInput).catch(() => null);
+            
+            if (!targetMember) {
+                return message.reply({
+                    embeds: [new EmbedBuilder()
+                        .setColor('#ED4245')
+                        .setDescription('❌ **User not found.** Please provide a valid username or ID.')
+                    ]
+                });
+            }
+
+            if (targetMember.id === tradeState.trader1Id || targetMember.user.bot) {
+                return message.reply({
+                    embeds: [new EmbedBuilder()
+                        .setColor('#ED4245')
+                        .setDescription('❌ Invalid user selected.')
+                    ]
+                });
+            }
+
+            const overwrites = [
+                { id: message.guild.id, deny: [PermissionFlagsBits.ViewChannel] },
+                { id: tradeState.trader1Id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages] },
+                { id: targetMember.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages] }
+            ];
+            if (conf.staffRoleId) {
+                overwrites.push({ 
+                    id: conf.staffRoleId, 
+                    allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages] 
+                });
+            }
+            await message.channel.permissionOverwrites.set(overwrites);
+
+            tradeState.trader2Id = targetMember.id;
+            tradeState.step = 'AWAITING_DEAL_DETAILS';
+            activeTrades.set(message.channel.id, tradeState);
+
+            const embed = new EmbedBuilder()
+                .setColor('#FEE75C')
+                .setTitle('📝 Step 2: Deal Configuration')
+                .setDescription(
+                    `✅ Added <@${targetMember.id}> to the ticket.\n\n` +
+                    `👉 <@${tradeState.trader1Id}>, please type the deal details.`
+                );
+
+            const row = new ActionRowBuilder().addComponents(
+                new ButtonBuilder()
+                    .setCustomId('claim_ticket')
+                    .setLabel('🙋‍♂️ Claim')
+                    .setStyle(ButtonStyle.Success),
+                new ButtonBuilder()
+                    .setCustomId('close_ticket')
+                    .setLabel('🔒 Close')
+                    .setStyle(ButtonStyle.Danger)
+            );
+
+            return message.reply({ embeds: [embed], components: [row] });
+        }
+
+        if (tradeState && tradeState.step === 'AWAITING_DEAL_DETAILS' && 
+            message.author.id === tradeState.trader1Id && !message.content.startsWith(prefix)) {
+            
+            tradeState.dealDetails = message.content;
+            tradeState.step = 'AWAITING_TRADER2_CONFIRMATION';
+            activeTrades.set(message.channel.id, tradeState);
+
+            const confirmEmbed = new EmbedBuilder()
+                .setColor('#5865F2')
+                .setTitle('🤝 Deal Confirmation Required')
+                .setDescription(
+                    `**Terms proposed by <@${tradeState.trader1Id}>:**\n` +
+                    `\`\`\`\n${tradeState.dealDetails}\n\`\`\`\n` +
+                    `👉 <@${tradeState.trader2Id}>, verify and confirm.`
+                )
+                .setFooter({ text: 'Both parties must agree before proceeding.' });
+
+            const row = new ActionRowBuilder().addComponents(
+                new ButtonBuilder()
+                    .setCustomId('confirm_deal_btn')
+                    .setLabel('🤝 Confirm Deal')
+                    .setStyle(ButtonStyle.Success),
+                new ButtonBuilder()
+                    .setCustomId('edit_deal_btn')
+                    .setLabel('📝 Edit Deal')
+                    .setStyle(ButtonStyle.Primary),
+                new ButtonBuilder()
+                    .setCustomId('claim_ticket')
+                    .setLabel('🙋‍♂️ Claim')
+                    .setStyle(ButtonStyle.Success),
+                new ButtonBuilder()
+                    .setCustomId('close_ticket')
+                    .setLabel('🔒 Close')
+                    .setStyle(ButtonStyle.Danger)
+            );
+
+            const confirmMessage = await message.channel.send({ 
+                embeds: [confirmEmbed], 
+                components: [row] 
+            });
+            tradeState.confirmationEmbedMessageId = confirmMessage.id;
+            activeTrades.set(message.channel.id, tradeState);
+            return;
+        }
+    }
+
     // Commands
     if (!message.content.startsWith(prefix) && !isPing) return;
 
@@ -463,6 +617,7 @@ client.on('messageCreate', async (message) => {
     const command = isPing ? 'dashboard' : args.shift().toLowerCase();
     const isAdmin = message.member.permissions.has(PermissionFlagsBits.Administrator);
 
+    // ===================== DASHBOARD =====================
     if (command === 'dashboard') {
         const hasDashRole = conf.dashboardRoleId ? 
             message.member.roles.cache.has(conf.dashboardRoleId) : false;
@@ -481,11 +636,13 @@ client.on('messageCreate', async (message) => {
         return;
     }
 
+    // ===================== SETUP TICKET =====================
     if (command === 'setup-ticket' && isAdmin) {
         const embed = new EmbedBuilder()
             .setColor('#2B2D31')
             .setTitle('🤝 Secure Middleman Services')
-            .setDescription('Open a ticket below for secure transactions.');
+            .setDescription('To ensure a safe transaction, please open a ticket below.\nA verified staff member will assist you shortly.')
+            .setFooter({ text: 'Cosmic™ · Safe Swap Services' });
 
         const row = new ActionRowBuilder().addComponents(
             new ButtonBuilder()
@@ -499,6 +656,7 @@ client.on('messageCreate', async (message) => {
         return;
     }
 
+    // ===================== CLOSE TICKET =====================
     if (command === 'close' && message.channel.name.startsWith('mm-')) {
         if (!conf.staffRoleId || !message.member.roles.cache.has(conf.staffRoleId) && !isAdmin) {
             return message.reply('❌ Staff access required.');
@@ -519,12 +677,100 @@ client.on('messageCreate', async (message) => {
         return;
     }
 
-    // Moderation Commands
+    // ===================== WHITELIST =====================
+    if (command === 'whitelist' && (isAdmin || message.author.id === message.guild.ownerId)) {
+        const target = message.mentions.members.first();
+        if (!target) {
+            return message.reply({
+                embeds: [new EmbedBuilder()
+                    .setColor('#ED4245')
+                    .setDescription(`❌ Please mention a user: \`${prefix}whitelist @user\``)
+                ]
+            });
+        }
+
+        if (target.id === message.author.id && message.author.id !== message.guild.ownerId) {
+            return message.reply({
+                embeds: [new EmbedBuilder()
+                    .setColor('#ED4245')
+                    .setDescription('❌ You cannot edit your own whitelist.')
+                ]
+            });
+        }
+
+        const userWhitelist = conf.whitelists[target.id] || [];
+        const allPerms = ['anti_ban', 'anti_kick', 'anti_channel_delete', 'anti_role_delete'];
+        
+        const allowed = userWhitelist.length > 0 ? 
+            userWhitelist.map(p => `✅ \`${p}\``).join('\n') : '❌ None';
+        const denied = allPerms.filter(p => !userWhitelist.includes(p)).map(p => `❌ \`${p}\``).join('\n') || '✅ None';
+
+        const embed = new EmbedBuilder()
+            .setColor('#2B2D31')
+            .setTitle('🛡️ Anti-Nuke Configuration')
+            .setDescription(`Managing permissions for ${target}\n*Unauthorized actions will result in an immediate ban.*`)
+            .addFields(
+                { name: '🟢 Allowed Actions', value: allowed, inline: true },
+                { name: '🔴 Blocked Actions', value: denied, inline: true }
+            );
+
+        const menu = new StringSelectMenuBuilder()
+            .setCustomId(`wl_menu_${target.id}`)
+            .setPlaceholder('Select Allowed Permissions')
+            .setMinValues(0)
+            .setMaxValues(4)
+            .addOptions([
+                { label: 'Anti Ban', value: 'anti_ban', description: 'Can ban members', default: userWhitelist.includes('anti_ban') },
+                { label: 'Anti Kick', value: 'anti_kick', description: 'Can kick members', default: userWhitelist.includes('anti_kick') },
+                { label: 'Anti Channel Delete', value: 'anti_channel_delete', description: 'Can delete channels', default: userWhitelist.includes('anti_channel_delete') },
+                { label: 'Anti Role Delete', value: 'anti_role_delete', description: 'Can delete roles', default: userWhitelist.includes('anti_role_delete') }
+            ]);
+
+        await message.reply({ 
+            embeds: [embed], 
+            components: [new ActionRowBuilder().addComponents(menu)] 
+        });
+        return;
+    }
+
+    // ===================== UNBAN =====================
+    if (command === 'unban' && message.member.permissions.has(PermissionFlagsBits.BanMembers)) {
+        const targetId = args[0];
+        if (!targetId) {
+            return message.reply({
+                embeds: [new EmbedBuilder()
+                    .setColor('#ED4245')
+                    .setDescription(`❌ Please provide a User ID: \`${prefix}unban <id>\``)
+                ]
+            });
+        }
+
+        try {
+            const user = await message.guild.members.unban(targetId, `Unbanned by ${message.author.tag}`);
+            await message.reply({
+                embeds: [new EmbedBuilder()
+                    .setColor('#2ECC71')
+                    .setDescription(`✅ **${user.username}** has been unbanned. Welcome back!`)
+                ]
+            });
+        } catch (error) {
+            await message.reply({
+                embeds: [new EmbedBuilder()
+                    .setColor('#ED4245')
+                    .setDescription('❌ Could not unban. Invalid ID or user is not banned.')
+                ]
+            });
+        }
+        return;
+    }
+
+    // ===================== AFK =====================
     if (command === 'afk') {
         const embed = new EmbedBuilder()
             .setColor('#2B2D31')
             .setTitle('💤 AFK Mode')
-            .setDescription('Do you want to receive DM notifications when mentioned?');
+            .setDescription('Do you want to receive DM notifications for mentions while AFK?')
+            .setThumbnail(message.author.displayAvatarURL({ dynamic: true }));
 
         const row = new ActionRowBuilder().addComponents(
             new ButtonBuilder()
@@ -541,6 +787,7 @@ client.on('messageCreate', async (message) => {
         return;
     }
 
+    // ===================== PURGE =====================
     if (command === 'purge' && message.member.permissions.has(PermissionFlagsBits.ManageMessages)) {
         const num = parseInt(args[0]);
         if (isNaN(num) || num < 1 || num > 99) {
@@ -552,22 +799,27 @@ client.on('messageCreate', async (message) => {
             });
         }
 
-        await message.channel.bulkDelete(num + 1).then(deleted => {
-            message.channel.send({
+        try {
+            const deleted = await message.channel.bulkDelete(num + 1);
+            const reply = await message.channel.send({
                 embeds: [new EmbedBuilder()
                     .setColor('#2ECC71')
                     .setDescription(`🧹 **Cleared ${deleted.size - 1} messages.**`)
                 ]
-            }).then(m => setTimeout(() => m.delete().catch(() => {}), 3000));
-        }).catch(() => message.reply({
-            embeds: [new EmbedBuilder()
-                .setColor('#ED4245')
-                .setDescription('❌ Cannot delete messages older than 14 days.')
-            ]
-        }));
+            });
+            setTimeout(() => reply.delete().catch(() => {}), 3000);
+        } catch (error) {
+            await message.reply({
+                embeds: [new EmbedBuilder()
+                    .setColor('#ED4245')
+                    .setDescription('❌ Cannot delete messages older than 14 days.')
+                ]
+            });
+        }
         return;
     }
 
+    // ===================== MUTE =====================
     if (command === 'mute' && message.member.permissions.has(PermissionFlagsBits.ModerateMembers)) {
         const target = message.mentions.members.first();
         if (!target || !args[1]) {
@@ -584,27 +836,31 @@ client.on('messageCreate', async (message) => {
             return message.reply({
                 embeds: [new EmbedBuilder()
                     .setColor('#ED4245')
-                    .setDescription('❌ Invalid time format. Use s, m, h, or d.')
+                    .setDescription('❌ Invalid time format. Use s, m, h, or d (e.g., 10m, 1h, 30s)')
                 ]
             });
         }
 
-        await target.timeout(msTime, `Muted by ${message.author.tag}`).then(() => {
-            message.reply({
+        try {
+            await target.timeout(msTime, `Muted by ${message.author.tag}`);
+            await message.reply({
                 embeds: [new EmbedBuilder()
                     .setColor('#FEE75C')
                     .setDescription(`🔇 **${target.user.username}** has been timed out for **${args[1]}**.`)
                 ]
             });
-        }).catch(() => message.reply({
-            embeds: [new EmbedBuilder()
-                .setColor('#ED4245')
-                .setDescription('❌ Missing permissions or user is too powerful.')
-            ]
-        }));
+        } catch (error) {
+            await message.reply({
+                embeds: [new EmbedBuilder()
+                    .setColor('#ED4245')
+                    .setDescription('❌ Missing permissions or user is too powerful.')
+                ]
+            });
+        }
         return;
     }
 
+    // ===================== KICK =====================
     if (command === 'kick' && message.member.permissions.has(PermissionFlagsBits.KickMembers)) {
         const target = message.mentions.members.first();
         if (!target) {
@@ -619,22 +875,26 @@ client.on('messageCreate', async (message) => {
         const isBlocked = await triggerAntiNuke(message.guild, message.author.id, 'anti_kick', target.id);
         if (isBlocked) return;
 
-        await target.kick(`Kicked by ${message.author.tag}`).then(() => {
-            message.reply({
+        try {
+            await target.kick(`Kicked by ${message.author.tag}`);
+            await message.reply({
                 embeds: [new EmbedBuilder()
                     .setColor('#E67E22')
                     .setDescription(`👢 **${target.user.username}** has been kicked.`)
                 ]
             });
-        }).catch(() => message.reply({
-            embeds: [new EmbedBuilder()
-                .setColor('#ED4245')
-                .setDescription('❌ Missing permissions to kick this user.')
-            ]
-        }));
+        } catch (error) {
+            await message.reply({
+                embeds: [new EmbedBuilder()
+                    .setColor('#ED4245')
+                    .setDescription('❌ Missing permissions to kick this user.')
+                ]
+            });
+        }
         return;
     }
 
+    // ===================== BAN =====================
     if (command === 'ban' && message.member.permissions.has(PermissionFlagsBits.BanMembers)) {
         const target = message.mentions.members.first();
         if (!target) {
@@ -649,34 +909,117 @@ client.on('messageCreate', async (message) => {
         const isBlocked = await triggerAntiNuke(message.guild, message.author.id, 'anti_ban', target.id);
         if (isBlocked) return;
 
-        await target.ban({ reason: `Banned by ${message.author.tag}` }).then(() => {
-            message.reply({
+        try {
+            await target.ban({ reason: `Banned by ${message.author.tag}` });
+            await message.reply({
                 embeds: [new EmbedBuilder()
                     .setColor('#ED4245')
                     .setDescription(`🔨 **${target.user.username}** has been banned.`)
                 ]
             });
-        }).catch(() => message.reply({
-            embeds: [new EmbedBuilder()
-                .setColor('#ED4245')
-                .setDescription('❌ Missing permissions to ban this user.')
-            ]
-        }));
+        } catch (error) {
+            await message.reply({
+                embeds: [new EmbedBuilder()
+                    .setColor('#ED4245')
+                    .setDescription('❌ Missing permissions to ban this user.')
+                ]
+            });
+        }
         return;
     }
 
+    // ===================== FBAN =====================
     if (command === 'fban' && isAdmin) {
         const target = message.mentions.members.first();
-        if (!target) return;
+        if (!target) {
+            return message.reply({
+                embeds: [new EmbedBuilder()
+                    .setColor('#ED4245')
+                    .setDescription('❌ Mention a user to fake ban.')
+                ]
+            });
+        }
 
         await message.channel.send({
             embeds: [new EmbedBuilder()
                 .setColor('#ED4245')
-                .setDescription(`🔨 **${target.user.username}** has been banned (fake).`)
+                .setDescription(`🔨 **${target.user.username}** has been permanently banned from the server.`)
             ]
         });
         await message.delete().catch(() => {});
         return;
+    }
+
+    // ===================== VOUCH COMMANDS =====================
+    if (command === 'vouch') {
+        const subCommand = args[0]?.toLowerCase();
+        
+        if (subCommand === 'start' && isAdmin) {
+            const conf = getServerConfig(guildId);
+            if (!conf.vouchChannelId || !conf.targetRoleId || !conf.giverRoleId) {
+                return message.reply({
+                    embeds: [new EmbedBuilder()
+                        .setColor('#ED4245')
+                        .setDescription('❌ Auto-vouch not fully configured! Use `!dashboard` to set up roles and channel.')
+                    ]
+                });
+            }
+            
+            await updateServerConfig(guildId, { running: true });
+            startVouchLoop(guildId);
+            return message.reply({
+                embeds: [new EmbedBuilder()
+                    .setColor('#2ECC71')
+                    .setDescription('✅ Auto-vouch started! It will post vouches in the configured channel.')
+                ]
+            });
+        }
+        
+        if (subCommand === 'stop' && isAdmin) {
+            await updateServerConfig(guildId, { running: false });
+            stopVouchLoop(guildId);
+            return message.reply({
+                embeds: [new EmbedBuilder()
+                    .setColor('#ED4245')
+                    .setDescription('🛑 Auto-vouch stopped.')
+                ]
+            });
+        }
+        
+        if (subCommand === 'status') {
+            const conf = getServerConfig(guildId);
+            const status = conf.running ? '🟢 Running' : '🔴 Stopped';
+            const interval = conf.intervalTime / 1000;
+            const channel = conf.vouchChannelId ? `<#${conf.vouchChannelId}>` : 'Not Set';
+            const target = conf.targetRoleId ? `<@&${conf.targetRoleId}>` : 'Not Set';
+            const giver = conf.giverRoleId ? `<@&${conf.giverRoleId}>` : 'Not Set';
+            
+            return message.reply({
+                embeds: [new EmbedBuilder()
+                    .setColor('#2B2D31')
+                    .setTitle('🎫 Auto-Vouch Status')
+                    .addFields(
+                        { name: 'Status', value: status, inline: true },
+                        { name: 'Interval', value: `${interval}s`, inline: true },
+                        { name: 'Channel', value: channel, inline: true },
+                        { name: 'Target Role', value: target, inline: true },
+                        { name: 'Giver Role', value: giver, inline: true }
+                    )
+                ]
+            });
+        }
+        
+        return message.reply({
+            embeds: [new EmbedBuilder()
+                .setColor('#FEE75C')
+                .setDescription(
+                    `**Vouch Commands:**\n` +
+                    `\`${prefix}vouch start\` - Start auto-vouch\n` +
+                    `\`${prefix}vouch stop\` - Stop auto-vouch\n` +
+                    `\`${prefix}vouch status\` - Check vouch status`
+                )
+            ]
+        });
     }
 });
 
@@ -688,7 +1031,7 @@ client.on('interactionCreate', async (interaction) => {
     const conf = getServerConfig(guildId);
     const user = interaction.user;
 
-    // Modals
+    // ===== MODALS =====
     if (interaction.isModalSubmit()) {
         if (interaction.customId === 'prefix_modal') {
             const newPrefix = interaction.fields.getTextInputValue('prefix_input');
@@ -702,7 +1045,7 @@ client.on('interactionCreate', async (interaction) => {
             const ms = parseTime(inputTime);
             if (!ms || ms < 5000) {
                 return interaction.reply({ 
-                    content: '❌ Invalid format or too short (minimum 5s).', 
+                    content: '❌ Invalid format or too short (minimum 5s). Use: 30s, 1m, 5m, etc.', 
                     ephemeral: true 
                 });
             }
@@ -748,7 +1091,7 @@ client.on('interactionCreate', async (interaction) => {
         }
     }
 
-    // Select Menus
+    // ===== SELECT MENUS =====
     if (interaction.isStringSelectMenu()) {
         if (interaction.customId === 'dash_nav_menu') {
             const page = interaction.values[0].replace('nav_', '');
@@ -779,11 +1122,16 @@ client.on('interactionCreate', async (interaction) => {
             await updateServerConfig(guildId, { whitelists: currentConfig.whitelists });
 
             const userWhitelist = currentConfig.whitelists[targetId];
+            const allPerms = ['anti_ban', 'anti_kick', 'anti_channel_delete', 'anti_role_delete'];
             const allowed = userWhitelist.length > 0 ? 
                 userWhitelist.map(p => `✅ \`${p}\``).join('\n') : '❌ None';
+            const denied = allPerms.filter(p => !userWhitelist.includes(p)).map(p => `❌ \`${p}\``).join('\n') || '✅ None';
 
             const updatedEmbed = EmbedBuilder.from(interaction.message.embeds[0])
-                .setFields({ name: '🟢 Allowed Actions', value: allowed });
+                .setFields(
+                    { name: '🟢 Allowed Actions', value: allowed, inline: true },
+                    { name: '🔴 Blocked Actions', value: denied, inline: true }
+                );
 
             const menu = new StringSelectMenuBuilder()
                 .setCustomId(`wl_menu_${targetId}`)
@@ -804,7 +1152,7 @@ client.on('interactionCreate', async (interaction) => {
         }
     }
 
-    // Role Select Menus
+    // ===== ROLE SELECT MENUS =====
     if (interaction.isRoleSelectMenu()) {
         const handlers = {
             'mm_set_staff': () => updateServerConfig(guildId, { staffRoleId: interaction.values[0] }),
@@ -822,7 +1170,7 @@ client.on('interactionCreate', async (interaction) => {
         }
     }
 
-    // Channel Select Menus
+    // ===== CHANNEL SELECT MENUS =====
     if (interaction.isChannelSelectMenu()) {
         const handlers = {
             'mm_set_category': () => updateServerConfig(guildId, { ticketCategoryId: interaction.values[0] }),
@@ -839,9 +1187,10 @@ client.on('interactionCreate', async (interaction) => {
         }
     }
 
-    // Buttons
+    // ===== BUTTONS =====
     if (!interaction.isButton()) return;
 
+    // Change Vouch Interval
     if (interaction.customId === 'change_vouch_interval') {
         const modal = new ModalBuilder()
             .setCustomId('interval_modal')
@@ -859,27 +1208,38 @@ client.on('interactionCreate', async (interaction) => {
         return interaction.showModal(modal);
     }
 
+    // AFK DM
     if (interaction.customId.startsWith('afk_dm_')) {
         afkUsers.set(user.id, { dm: interaction.customId === 'afk_dm_yes' });
         return interaction.update({
             content: '',
             embeds: [new EmbedBuilder()
                 .setColor('#2ECC71')
-                .setDescription('✅ AFK mode set!')
+                .setDescription('✅ AFK mode set! You will be notified when mentioned.')
             ],
             components: []
         });
     }
 
+    // Toggle Auto-Vouch
     if (interaction.customId === 'v_toggle') {
         const currentConf = getServerConfig(guildId);
         const newRunning = !currentConf.running;
+        
+        if (newRunning && (!currentConf.vouchChannelId || !currentConf.targetRoleId || !currentConf.giverRoleId)) {
+            return interaction.reply({
+                content: '❌ Cannot start auto-vouch! Please configure roles and channel first in Vouch Setup.',
+                ephemeral: true
+            });
+        }
+        
         await updateServerConfig(guildId, { running: newRunning });
         newRunning ? startVouchLoop(guildId) : stopVouchLoop(guildId);
         const dashData = await getDashboard(guildId, 'home');
         return interaction.update(dashData);
     }
 
+    // Change Prefix
     if (interaction.customId === 'change_prefix') {
         const modal = new ModalBuilder()
             .setCustomId('prefix_modal')
@@ -892,21 +1252,24 @@ client.on('interactionCreate', async (interaction) => {
                         .setStyle(TextInputStyle.Short)
                         .setRequired(true)
                         .setMaxLength(3)
+                        .setPlaceholder('!')
                 )
             );
         return interaction.showModal(modal);
     }
 
+    // Vouch Back
     if (interaction.customId === 'vouch_back_deco') {
         return interaction.reply({
             embeds: [new EmbedBuilder()
                 .setColor('#5865F2')
-                .setDescription('📤 Request sent to staff for confirmation.')
+                .setDescription('📤 Request sent to staff for confirmation. Please wait for a staff member to assist you.')
             ],
             ephemeral: true
         });
     }
 
+    // Create Ticket
     if (interaction.customId === 'create_ticket') {
         await interaction.deferReply({ ephemeral: true });
         
@@ -924,67 +1287,83 @@ client.on('interactionCreate', async (interaction) => {
             return interaction.editReply({
                 embeds: [new EmbedBuilder()
                     .setColor('#ED4245')
-                    .setDescription('❌ Staff role not configured.')
+                    .setDescription('❌ Staff role not configured. Please ask an admin to set it up.')
                 ]
             });
         }
 
-        const ticketChannel = await interaction.guild.channels.create({
-            name: `mm-${cleanName}`,
-            type: ChannelType.GuildText,
-            parent: conf.ticketCategoryId || null,
-            permissionOverwrites: [
-                { id: interaction.guild.id, deny: [PermissionFlagsBits.ViewChannel] },
-                { id: user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages] },
-                { id: conf.staffRoleId, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages] }
-            ]
-        });
+        try {
+            const ticketChannel = await interaction.guild.channels.create({
+                name: `mm-${cleanName}`,
+                type: ChannelType.GuildText,
+                parent: conf.ticketCategoryId || null,
+                permissionOverwrites: [
+                    { id: interaction.guild.id, deny: [PermissionFlagsBits.ViewChannel] },
+                    { id: user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages] },
+                    { id: conf.staffRoleId, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages] }
+                ]
+            });
 
-        activeTrades.set(ticketChannel.id, {
-            trader1Id: user.id,
-            trader2Id: null,
-            step: 'AWAITING_TRADER2',
-            dealDetails: null,
-            claimedBy: null
-        });
+            activeTrades.set(ticketChannel.id, {
+                trader1Id: user.id,
+                trader2Id: null,
+                step: 'AWAITING_TRADER2',
+                dealDetails: null,
+                claimedBy: null,
+                confirmationEmbedMessageId: null
+            });
 
-        await sendTicketLog(interaction.guild, conf, '🎫 Ticket Opened', 
-            `Ticket ${ticketChannel} created by ${user}`, '#2ECC71');
+            await sendTicketLog(interaction.guild, conf, '🎫 Ticket Opened', 
+                `Ticket ${ticketChannel} created by ${user}`, '#2ECC71');
 
-        const embed = new EmbedBuilder()
-            .setColor('#5865F2')
-            .setTitle('🎫 Ticket Created')
-            .setDescription(
-                `Welcome <@${user.id}>,\n\n` +
-                `**Step 1:** Send the **Username** or **User ID** of the person you're trading with.`
+            const embed = new EmbedBuilder()
+                .setColor('#5865F2')
+                .setTitle('🎫 Ticket Created')
+                .setDescription(
+                    `Welcome <@${user.id}>,\n\n` +
+                    `**Step 1:** Send the **Username** or **User ID** of the person you're trading with.\n` +
+                    `**Step 2:** Provide the trade details.\n` +
+                    `**Step 3:** Wait for confirmation from the other party.\n\n` +
+                    `A staff member will assist you shortly.`
+                )
+                .setFooter({ text: 'Cosmic™ · Safe Swap Services' });
+
+            const row = new ActionRowBuilder().addComponents(
+                new ButtonBuilder()
+                    .setCustomId('claim_ticket')
+                    .setLabel('🙋‍♂️ Claim')
+                    .setStyle(ButtonStyle.Success),
+                new ButtonBuilder()
+                    .setCustomId('close_ticket')
+                    .setLabel('🔒 Close')
+                    .setStyle(ButtonStyle.Danger)
             );
 
-        const row = new ActionRowBuilder().addComponents(
-            new ButtonBuilder()
-                .setCustomId('claim_ticket')
-                .setLabel('🙋‍♂️ Claim')
-                .setStyle(ButtonStyle.Success),
-            new ButtonBuilder()
-                .setCustomId('close_ticket')
-                .setLabel('🔒 Close')
-                .setStyle(ButtonStyle.Danger)
-        );
-
-        await ticketChannel.send({ content: `${user} 👋`, embeds: [embed], components: [row] });
-        
-        return interaction.editReply({
-            embeds: [new EmbedBuilder()
-                .setColor('#2ECC71')
-                .setDescription(`✅ Ticket created: ${ticketChannel}`)
-            ]
-        });
+            await ticketChannel.send({ content: `${user} 👋`, embeds: [embed], components: [row] });
+            
+            return interaction.editReply({
+                embeds: [new EmbedBuilder()
+                    .setColor('#2ECC71')
+                    .setDescription(`✅ Ticket created: ${ticketChannel}`)
+                ]
+            });
+        } catch (error) {
+            console.error('Error creating ticket:', error);
+            return interaction.editReply({
+                embeds: [new EmbedBuilder()
+                    .setColor('#ED4245')
+                    .setDescription('❌ Error creating ticket. Please check bot permissions.')
+                ]
+            });
+        }
     }
 
+    // Edit Deal
     if (interaction.customId === 'edit_deal_btn') {
         const tradeState = activeTrades.get(interaction.channelId);
         if (!tradeState || user.id !== tradeState.trader1Id) {
             return interaction.reply({ 
-                content: '❌ Only the creator can edit.', 
+                content: '❌ Only the creator can edit the deal.', 
                 ephemeral: true 
             });
         }
@@ -998,17 +1377,19 @@ client.on('interactionCreate', async (interaction) => {
                         .setCustomId('deal_text')
                         .setLabel('New Deal Terms')
                         .setStyle(TextInputStyle.Paragraph)
+                        .setRequired(true)
                         .setValue(tradeState.dealDetails || '')
                 )
             );
         return interaction.showModal(modal);
     }
 
+    // Confirm Deal
     if (interaction.customId === 'confirm_deal_btn') {
         const tradeState = activeTrades.get(interaction.channelId);
         if (!tradeState || user.id !== tradeState.trader2Id) {
             return interaction.reply({ 
-                content: '❌ You are not allowed to confirm.', 
+                content: '❌ You are not allowed to confirm this deal.', 
                 ephemeral: true 
             });
         }
@@ -1034,7 +1415,7 @@ client.on('interactionCreate', async (interaction) => {
                 .setDescription(
                     `🔒 **Final Agreement:**\n` +
                     `\`\`\`\n${tradeState.dealDetails}\n\`\`\`\n` +
-                    `A staff member will proceed shortly.`
+                    `A staff member will proceed shortly. Both parties have agreed to these terms.`
                 )
             ],
             components: [row]
@@ -1042,6 +1423,7 @@ client.on('interactionCreate', async (interaction) => {
         return;
     }
 
+    // Claim Ticket
     if (interaction.customId === 'claim_ticket') {
         if (!conf.staffRoleId || !interaction.member.roles.cache.has(conf.staffRoleId)) {
             return interaction.reply({ 
@@ -1090,6 +1472,7 @@ client.on('interactionCreate', async (interaction) => {
         return;
     }
 
+    // Unclaim Ticket
     if (interaction.customId.startsWith('unclaim_')) {
         const allowedStaffId = interaction.customId.split('_')[1];
         if (user.id !== allowedStaffId && !interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
@@ -1133,6 +1516,7 @@ client.on('interactionCreate', async (interaction) => {
         return;
     }
 
+    // Close Ticket
     if (interaction.customId === 'close_ticket') {
         if (!conf.staffRoleId || (!interaction.member.roles.cache.has(conf.staffRoleId) && 
             !interaction.member.permissions.has(PermissionFlagsBits.Administrator))) {
@@ -1164,9 +1548,5 @@ process.on('unhandledRejection', error => {
 });
 
 // ===================== START BOT =====================
-// ===================== START BOT =====================
 console.log('🔄 Attempting to connect to Discord...');
-console.log('📝 Token length:', BOT_TOKEN ? BOT_TOKEN.length : 'MISSING');
-console.log('📝 Token starts with:', BOT_TOKEN ? BOT_TOKEN.substring(0, 10) + '...' : 'N/A');
-
 client.login(BOT_TOKEN);
