@@ -20,6 +20,13 @@ require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
 
+// ===================== CHECK TOKEN =====================
+const BOT_TOKEN = process.env.DISCORD_TOKEN;
+if (!BOT_TOKEN) {
+    console.error('❌ DISCORD_TOKEN is missing! Add it to Railway Variables');
+    process.exit(1);
+}
+
 // ===================== FILE-BASED STORAGE =====================
 const CONFIG_FILE = path.join(__dirname, 'config.json');
 
@@ -100,8 +107,6 @@ const client = new Client({
         GatewayIntentBits.GuildModeration
     ]
 });
-
-const BOT_TOKEN = process.env.DISCORD_TOKEN;
 
 // ===================== HELPERS =====================
 function parseTime(str) {
@@ -452,131 +457,6 @@ client.on('messageCreate', async (message) => {
         }
     });
 
-    // Ticket System
-    if (message.channel.name.startsWith('mm-')) {
-        let tradeState = activeTrades.get(message.channel.id);
-        if (!tradeState) {
-            const creatorName = message.channel.name.replace('mm-', '');
-            if (message.author.username.toLowerCase().replace(/[^a-z0-9]/g, '') === creatorName) {
-                tradeState = {
-                    trader1Id: message.author.id,
-                    trader2Id: null,
-                    step: 'AWAITING_TRADER2',
-                    dealDetails: null,
-                    claimedBy: null
-                };
-                activeTrades.set(message.channel.id, tradeState);
-            }
-        }
-
-        if (tradeState && tradeState.step === 'AWAITING_TRADER2' && 
-            message.author.id === tradeState.trader1Id && !message.content.startsWith(prefix)) {
-            
-            const targetInput = message.content.replace(/[<@!>]/g, '').trim();
-            let targetMember = await message.guild.members.fetch(targetInput).catch(() => null);
-            
-            if (!targetMember) {
-                return message.reply({
-                    embeds: [new EmbedBuilder()
-                        .setColor('#ED4245')
-                        .setDescription('❌ **User not found.** Please provide a valid username or ID.')
-                    ]
-                });
-            }
-
-            if (targetMember.id === tradeState.trader1Id || targetMember.user.bot) {
-                return message.reply({
-                    embeds: [new EmbedBuilder()
-                        .setColor('#ED4245')
-                        .setDescription('❌ Invalid user selected.')
-                    ]
-                });
-            }
-
-            const overwrites = [
-                { id: message.guild.id, deny: [PermissionFlagsBits.ViewChannel] },
-                { id: tradeState.trader1Id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages] },
-                { id: targetMember.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages] }
-            ];
-            if (conf.staffRoleId) {
-                overwrites.push({ 
-                    id: conf.staffRoleId, 
-                    allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages] 
-                });
-            }
-            await message.channel.permissionOverwrites.set(overwrites);
-
-            tradeState.trader2Id = targetMember.id;
-            tradeState.step = 'AWAITING_DEAL_DETAILS';
-            activeTrades.set(message.channel.id, tradeState);
-
-            const embed = new EmbedBuilder()
-                .setColor('#FEE75C')
-                .setTitle('📝 Step 2: Deal Configuration')
-                .setDescription(
-                    `✅ Added <@${targetMember.id}> to the ticket.\n\n` +
-                    `👉 <@${tradeState.trader1Id}>, please type the deal details.`
-                );
-
-            const row = new ActionRowBuilder().addComponents(
-                new ButtonBuilder()
-                    .setCustomId('claim_ticket')
-                    .setLabel('🙋‍♂️ Claim')
-                    .setStyle(ButtonStyle.Success),
-                new ButtonBuilder()
-                    .setCustomId('close_ticket')
-                    .setLabel('🔒 Close')
-                    .setStyle(ButtonStyle.Danger)
-            );
-
-            return message.reply({ embeds: [embed], components: [row] });
-        }
-
-        if (tradeState && tradeState.step === 'AWAITING_DEAL_DETAILS' && 
-            message.author.id === tradeState.trader1Id && !message.content.startsWith(prefix)) {
-            
-            tradeState.dealDetails = message.content;
-            tradeState.step = 'AWAITING_TRADER2_CONFIRMATION';
-            activeTrades.set(message.channel.id, tradeState);
-
-            const confirmEmbed = new EmbedBuilder()
-                .setColor('#5865F2')
-                .setTitle('🤝 Deal Confirmation Required')
-                .setDescription(
-                    `**Terms proposed by <@${tradeState.trader1Id}>:**\n` +
-                    `\`\`\`\n${tradeState.dealDetails}\n\`\`\`\n` +
-                    `👉 <@${tradeState.trader2Id}>, verify and confirm.`
-                );
-
-            const row = new ActionRowBuilder().addComponents(
-                new ButtonBuilder()
-                    .setCustomId('confirm_deal_btn')
-                    .setLabel('🤝 Confirm Deal')
-                    .setStyle(ButtonStyle.Success),
-                new ButtonBuilder()
-                    .setCustomId('edit_deal_btn')
-                    .setLabel('📝 Edit Deal')
-                    .setStyle(ButtonStyle.Primary),
-                new ButtonBuilder()
-                    .setCustomId('claim_ticket')
-                    .setLabel('🙋‍♂️ Claim')
-                    .setStyle(ButtonStyle.Success),
-                new ButtonBuilder()
-                    .setCustomId('close_ticket')
-                    .setLabel('🔒 Close')
-                    .setStyle(ButtonStyle.Danger)
-            );
-
-            const confirmMessage = await message.channel.send({ 
-                embeds: [confirmEmbed], 
-                components: [row] 
-            });
-            tradeState.confirmationEmbedMessageId = confirmMessage.id;
-            activeTrades.set(message.channel.id, tradeState);
-            return;
-        }
-    }
-
     // Commands
     if (!message.content.startsWith(prefix) && !isPing) return;
 
@@ -637,55 +517,6 @@ client.on('messageCreate', async (message) => {
         
         activeTrades.delete(message.channel.id);
         setTimeout(() => message.channel.delete().catch(() => {}), 5000);
-        return;
-    }
-
-    if (command === 'whitelist' && (isAdmin || message.author.id === message.guild.ownerId)) {
-        const target = message.mentions.members.first();
-        if (!target) {
-            return message.reply({
-                embeds: [new EmbedBuilder()
-                    .setColor('#ED4245')
-                    .setDescription('❌ Please mention a user: `!whitelist @user`')
-                ]
-            });
-        }
-
-        if (target.id === message.author.id && message.author.id !== message.guild.ownerId) {
-            return message.reply({
-                embeds: [new EmbedBuilder()
-                    .setColor('#ED4245')
-                    .setDescription('❌ You cannot edit your own whitelist.')
-                ]
-            });
-        }
-
-        const userWhitelist = conf.whitelists[target.id] || [];
-        const allowed = userWhitelist.length > 0 ? 
-            userWhitelist.map(p => `✅ \`${p}\``).join('\n') : '❌ None';
-
-        const embed = new EmbedBuilder()
-            .setColor('#2B2D31')
-            .setTitle('🛡️ Anti-Nuke Configuration')
-            .setDescription(`Managing permissions for ${target}`)
-            .addFields({ name: '🟢 Allowed Actions', value: allowed });
-
-        const menu = new StringSelectMenuBuilder()
-            .setCustomId(`wl_menu_${target.id}`)
-            .setPlaceholder('Select Allowed Permissions')
-            .setMinValues(0)
-            .setMaxValues(4)
-            .addOptions([
-                { label: 'Anti Ban', value: 'anti_ban', default: userWhitelist.includes('anti_ban') },
-                { label: 'Anti Kick', value: 'anti_kick', default: userWhitelist.includes('anti_kick') },
-                { label: 'Anti Channel Delete', value: 'anti_channel_delete', default: userWhitelist.includes('anti_channel_delete') },
-                { label: 'Anti Role Delete', value: 'anti_role_delete', default: userWhitelist.includes('anti_role_delete') }
-            ]);
-
-        await message.reply({ 
-            embeds: [embed], 
-            components: [new ActionRowBuilder().addComponents(menu)] 
-        });
         return;
     }
 
@@ -1334,9 +1165,4 @@ process.on('unhandledRejection', error => {
 });
 
 // ===================== START BOT =====================
-if (!BOT_TOKEN) {
-    console.error('❌ DISCORD_TOKEN is missing! Add it to your .env file');
-    process.exit(1);
-}
-
 client.login(BOT_TOKEN);
