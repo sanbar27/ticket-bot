@@ -97,14 +97,13 @@ async function updateServerConfig(guildId, updates) {
     return allConfigs[guildId];
 }
 
-// ===================== CLIENT INIT =====================
+// ===================== CLIENT INIT - FIXED INTENTS =====================
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent,
-        GatewayIntentBits.GuildMembers,
-        GatewayIntentBits.GuildModeration
+        GatewayIntentBits.GuildMembers
     ]
 });
 
