@@ -20,7 +20,7 @@ require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
 
-// ===================== FILE-BASED STORAGE (No MongoDB!) =====================
+// ===================== FILE-BASED STORAGE =====================
 const CONFIG_FILE = path.join(__dirname, 'config.json');
 
 // Load config from file or create default
@@ -1334,4 +1334,9 @@ process.on('unhandledRejection', error => {
 });
 
 // ===================== START BOT =====================
+if (!BOT_TOKEN) {
+    console.error('❌ DISCORD_TOKEN is missing! Add it to your .env file');
+    process.exit(1);
+}
+
 client.login(BOT_TOKEN);
