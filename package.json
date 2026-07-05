@@ -1,11 +1,10 @@
 {
-  "name": "discord-bot",
+  "name": "ticket-bot",
   "version": "1.0.0",
-  "description": "Discord bot with file-based storage",
+  "description": "Discord ticket bot with file-based storage",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js",
-    "build": "echo 'No build step needed'"
+    "start": "node index.js"
   },
   "dependencies": {
     "discord.js": "^14.14.1",
