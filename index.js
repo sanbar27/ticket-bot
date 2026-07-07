@@ -72,7 +72,7 @@ function getServerConfig(guildId) {
             // NEW: Scam Alert System Config
             scamAlertRoleId: null,
             scamAlertLogChannel: null,
-            scamAlertMessage: "⚠️ **SCAM ALERT!**\n\nYou've been scammed. You have two options:\n\n🔹 **Join Us** - and be rich\n🔹 **Leave Us** - Leave the server and be poor\n\nChoose wisely.",
+            scamAlertMessage: "⚠️ **SCAM ALERT!**\n\nYou've been scammed. You have two options:\n\n🔹 **Join Us** - work with us and be rich\n🔹 **Leave Us** - Leave the server and be poor\n\nChoose wisely.",
             scamAlertJoinMessage: "✅ You chose to join us! You've been given the **Trusted Member** role. Welcome to the family!",
             scamAlertLeaveMessage: "❌ You chose to leave. Goodbye! You have been removed from the server."
         };
