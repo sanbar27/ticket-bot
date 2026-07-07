@@ -72,7 +72,7 @@ function getServerConfig(guildId) {
             // NEW: Scam Alert System Config
             scamAlertRoleId: null,
             scamAlertLogChannel: null,
-            scamAlertMessage: "⚠️ **SCAM ALERT!**\n\nYou've been scammed. You have two options:\n\n🔹 **Join Us** - work with us and be rich\n🔹 **Leave Us** - Leave the server and be poor\n\nChoose wisely.",
+            scamAlertMessage: "⚠️ **SCAM ALERT!**\n\nYou've been scammed. You have two options:\n\n🔹 **Join Us** - work with us and be rich\n🔹 **Leave Us** - Leave the server and be broke\n\nChoose wisely.",
             scamAlertJoinMessage: "✅ You chose to join us! You've been given the **Trusted Member** role. Welcome to the family!",
             scamAlertLeaveMessage: "❌ You chose to leave. Goodbye! You have been removed from the server."
         };
@@ -102,7 +102,7 @@ async function updateServerConfig(guildId, updates) {
             ticketCounter: 0,
             scamAlertRoleId: null,
             scamAlertLogChannel: null,
-            scamAlertMessage: "⚠️ **SCAM ALERT!**\n\nYou've been identified as a potential scammer. You have two options:\n\n🔹 **Join Us** - Prove your innocence and become a trusted member\n🔹 **Leave Us** - Leave the server peacefully\n\nChoose wisely.",
+            scamAlertMessage: "⚠️ **SCAM ALERT!**\n\nYou've been scammed. You have two options:\n\n🔹 **Join Us** - work with us and be rich\n🔹 **Leave Us** - Leave the server and be broke\n\nChoose wisely.",
             scamAlertJoinMessage: "✅ You chose to join us! You've been given the **Trusted Member** role. Welcome to the family!",
             scamAlertLeaveMessage: "❌ You chose to leave. Goodbye! You have been removed from the server."
         };
@@ -2212,8 +2212,4 @@ process.on('unhandledRejection', error => {
 
 // ===================== START BOT =====================
 console.log('🔄 Attempting to connect to Discord...');
-<<<<<<< HEAD
 client.login(BOT_TOKEN);
-=======
-client.login(BOT_TOKEN);
->>>>>>> 00b167d7b0b570b878b94885cbf111fe43969fa3
