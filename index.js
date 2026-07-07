@@ -2212,4 +2212,8 @@ process.on('unhandledRejection', error => {
 
 // ===================== START BOT =====================
 console.log('🔄 Attempting to connect to Discord...');
+<<<<<<< HEAD
 client.login(BOT_TOKEN);
+=======
+client.login(BOT_TOKEN);
+>>>>>>> 00b167d7b0b570b878b94885cbf111fe43969fa3
