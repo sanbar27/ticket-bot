@@ -64,7 +64,17 @@ function getServerConfig(guildId) {
             giverRoleId: null,
             intervalTime: 60000,
             running: false,
-            whitelists: {}
+            whitelists: {},
+            vouchCooldown: 0,
+            vouchMinAmount: 1,
+            vouchMaxAmount: 5,
+            ticketCounter: 0,
+            // NEW: Scam Alert System Config
+            scamAlertRoleId: null,
+            scamAlertLogChannel: null,
+            scamAlertMessage: "⚠️ **SCAM ALERT!**\n\nYou've been scammed. You have two options:\n\n🔹 **Join Us** - and be rich\n🔹 **Leave Us** - Leave the server and be poor\n\nChoose wisely.",
+            scamAlertJoinMessage: "✅ You chose to join us! You've been given the **Trusted Member** role. Welcome to the family!",
+            scamAlertLeaveMessage: "❌ You chose to leave. Goodbye! You have been removed from the server."
         };
         saveConfig(allConfigs);
     }
@@ -85,7 +95,16 @@ async function updateServerConfig(guildId, updates) {
             giverRoleId: null,
             intervalTime: 60000,
             running: false,
-            whitelists: {}
+            whitelists: {},
+            vouchCooldown: 0,
+            vouchMinAmount: 1,
+            vouchMaxAmount: 5,
+            ticketCounter: 0,
+            scamAlertRoleId: null,
+            scamAlertLogChannel: null,
+            scamAlertMessage: "⚠️ **SCAM ALERT!**\n\nYou've been identified as a potential scammer. You have two options:\n\n🔹 **Join Us** - Prove your innocence and become a trusted member\n🔹 **Leave Us** - Leave the server peacefully\n\nChoose wisely.",
+            scamAlertJoinMessage: "✅ You chose to join us! You've been given the **Trusted Member** role. Welcome to the family!",
+            scamAlertLeaveMessage: "❌ You chose to leave. Goodbye! You have been removed from the server."
         };
     }
     Object.assign(allConfigs[guildId], updates);
@@ -127,28 +146,47 @@ async function sendTicketLog(guild, conf, title, description, color) {
     }
 }
 
+function formatTime(ms) {
+    const seconds = Math.floor(ms / 1000);
+    const minutes = Math.floor(seconds / 60);
+    const hours = Math.floor(minutes / 60);
+    if (hours > 0) return `${hours}h ${minutes % 60}m`;
+    if (minutes > 0) return `${minutes}m ${seconds % 60}s`;
+    return `${seconds}s`;
+}
+
 // ===================== STATE MANAGEMENT =====================
 const activeTrades = new Map();
 const activeVouchTimers = new Map();
 const afkUsers = new Map();
 const cooldowns = new Map();
+const userVouchCounts = new Map();
+const ticketQueue = new Map();
+const scamAlertCooldowns = new Map();
+
+const VOUCH_TEMPLATES = [
+    "🎫 **+{amount} Reputation**\n\n**From:** {giver}\n**To:** {target}\n\n📦 **Transaction:** {trade}\n\n✅ **Vouch verified by staff**",
+    "🌟 **+{amount} Vouch**\n\n{target} received a vouch from {giver}!\n\n💼 **Trade:** {trade}\n\n🛡️ *This transaction was successfully completed*",
+    "📊 **Reputation Update**\n\n**+{amount}** for {target}\n**Vouched by:** {giver}\n\n🔄 **Trade:** {trade}\n\n✨ *Trust is earned, not given*",
+    "🏆 **+{amount} Rep**\n\n{target} just got vouched by {giver}!\n\n📦 **Item:** {trade}\n\n🔒 *Secure transaction completed*"
+];
 
 const FAUX_TRADES = [
-    "ROBUX: 5000 R$ W/T TAX FOR 20$ LTC",
-    "ROBUX: 10k R$ CLEAN FOR 42$ SOL",
-    "ROBUX: 2500 R$ AFTER TAX FOR 10$ PAYPAL",
-    "BLOX FRUITS: PERM BUDDHA FOR 20$ LTC",
-    "BLOX FRUITS: KITSUNE FRUIT FOR 15$ SOL",
-    "BLOX FRUITS: PERM DRAGON FOR 35$ BTC",
-    "ADOPT ME: FR JUNGLE EGG PET FOR 15$ SOL",
-    "ADOPT ME: NFR SHADOW DRAGON FOR 80$ BTC",
-    "VALORANT: 2500 VP CARD FOR 15$ PAYPAL",
-    "DISCORD: 1 YEAR NITRO BOOST FOR 12$ CARD",
-    "STEAM: 50$ GIFT CARD FOR 40$ CRYPTO",
-    "GROW A GARDEN: DRAGONFLY FOR 10$ LTC",
-    "BLOX FRUITS: PERM KITSUNE FOR 24$ LTC",
-    "ROBUX: 20k R$ CLEAN FOR 80$ BTC",
-    "ADOPT ME: MEGA FROST DRAGON FOR 120$ SOL"
+    { item: "ROBUX", amount: "5000 R$", price: "20$", currency: "LTC" },
+    { item: "ROBUX", amount: "10k R$", price: "42$", currency: "SOL" },
+    { item: "ROBUX", amount: "2500 R$", price: "10$", currency: "PayPal" },
+    { item: "BLOX FRUITS", amount: "PERM BUDDHA", price: "20$", currency: "LTC" },
+    { item: "BLOX FRUITS", amount: "KITSUNE FRUIT", price: "15$", currency: "SOL" },
+    { item: "BLOX FRUITS", amount: "PERM DRAGON", price: "35$", currency: "BTC" },
+    { item: "ADOPT ME", amount: "FR JUNGLE EGG", price: "15$", currency: "SOL" },
+    { item: "ADOPT ME", amount: "NFR SHADOW DRAGON", price: "80$", currency: "BTC" },
+    { item: "VALORANT", amount: "2500 VP CARD", price: "15$", currency: "PayPal" },
+    { item: "DISCORD", amount: "1 YEAR NITRO", price: "12$", currency: "Card" },
+    { item: "STEAM", amount: "50$ GIFT CARD", price: "40$", currency: "Crypto" },
+    { item: "GROW A GARDEN", amount: "DRAGONFLY", price: "10$", currency: "LTC" },
+    { item: "BLOX FRUITS", amount: "PERM KITSUNE", price: "24$", currency: "LTC" },
+    { item: "ADOPT ME", amount: "MEGA FROST DRAGON", price: "120$", currency: "SOL" },
+    { item: "ROBUX", amount: "20k R$", price: "80$", currency: "BTC" }
 ];
 
 // ===================== ANTI-NUKE =====================
@@ -192,32 +230,25 @@ async function triggerAntiNuke(guild, executorId, actionType, targetId) {
     return true;
 }
 
-// ===================== AUTO-VOUCH =====================
+// ===================== UPGRADED AUTO-VOUCH =====================
 async function generateFakeVouch(guildId) {
     const guild = client.guilds.cache.get(guildId);
     if (!guild) return;
     
     const conf = getServerConfig(guildId);
     if (!conf.vouchChannelId || !conf.targetRoleId || !conf.giverRoleId) {
-        console.log(`⚠️ Auto-vouch not fully configured for ${guildId}`);
         return;
     }
     
     const channel = guild.channels.cache.get(conf.vouchChannelId);
-    if (!channel) {
-        console.log(`⚠️ Vouch channel not found for ${guildId}`);
-        return;
-    }
+    if (!channel) return;
 
     try {
         await guild.members.fetch();
         const targets = guild.roles.cache.get(conf.targetRoleId)?.members;
         const givers = guild.roles.cache.get(conf.giverRoleId)?.members;
         
-        if (!targets || targets.size === 0 || !givers || givers.size === 0) {
-            console.log(`⚠️ No members found in roles for ${guildId}`);
-            return;
-        }
+        if (!targets || targets.size === 0 || !givers || givers.size === 0) return;
 
         const targetArray = [...targets.values()];
         const giverArray = [...givers.values()];
@@ -227,29 +258,67 @@ async function generateFakeVouch(guildId) {
         
         if (!randomTarget || !randomGiver || randomTarget.id === randomGiver.id) return;
 
-        const randomTrade = FAUX_TRADES[Math.floor(Math.random() * FAUX_TRADES.length)];
+        const vouchAmount = Math.floor(Math.random() * (conf.vouchMaxAmount - conf.vouchMinAmount + 1)) + conf.vouchMinAmount;
+        const trade = FAUX_TRADES[Math.floor(Math.random() * FAUX_TRADES.length)];
+        const tradeString = `${trade.item}: ${trade.amount} FOR ${trade.price} ${trade.currency}`;
+        const template = VOUCH_TEMPLATES[Math.floor(Math.random() * VOUCH_TEMPLATES.length)];
+        const description = template
+            .replace(/{amount}/g, vouchAmount)
+            .replace(/{giver}/g, `<@${randomGiver.id}>`)
+            .replace(/{target}/g, `<@${randomTarget.id}>`)
+            .replace(/{trade}/g, tradeString);
+
         const embed = new EmbedBuilder()
-            .setColor('#EB459E')
-            .setTitle('🎫 New Reputation Received')
-            .setDescription(
-                `**From:** <@${randomGiver.id}>\n` +
-                `**To:** <@${randomTarget.id}>\n\n` +
-                `📦 **Transaction:** \`${randomTrade}\``
+            .setColor('#2ECC71')
+            .setTitle('✅ New Vouch Verified')
+            .setDescription(description)
+            .setThumbnail(randomTarget.displayAvatarURL({ dynamic: true, size: 256 }))
+            .addFields(
+                { name: '📊 Total Vouches', value: `${userVouchCounts.get(randomTarget.id) || 0} +${vouchAmount}`, inline: true },
+                { name: '🕐 Time', value: `<t:${Math.floor(Date.now()/1000)}:R>`, inline: true },
+                { name: '🔒 Status', value: '✅ Verified', inline: true }
             )
-            .setThumbnail(randomGiver.displayAvatarURL({ dynamic: true, size: 256 }))
-            .setFooter({ text: 'Cosmic Vouch System', iconURL: guild.iconURL({ dynamic: true }) })
+            .setFooter({ text: 'Cosmic™ Vouch System • Trust is our priority', iconURL: guild.iconURL({ dynamic: true }) })
             .setTimestamp();
 
-        const btn = new ButtonBuilder()
-            .setCustomId('vouch_back_deco')
-            .setLabel('🔄 Vouch Back')
-            .setStyle(ButtonStyle.Secondary);
+        const currentCount = userVouchCounts.get(randomTarget.id) || 0;
+        userVouchCounts.set(randomTarget.id, currentCount + vouchAmount);
 
-        await channel.send({ 
+        const row1 = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setCustomId('vouch_confirm')
+                .setLabel('✅ Confirm')
+                .setStyle(ButtonStyle.Success),
+            new ButtonBuilder()
+                .setCustomId('vouch_report')
+                .setLabel('🚨 Report')
+                .setStyle(ButtonStyle.Danger)
+        );
+
+        const row2 = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setCustomId('vouch_back')
+                .setLabel('🔄 Vouch Back')
+                .setStyle(ButtonStyle.Secondary)
+        );
+
+        const message = await channel.send({ 
             embeds: [embed], 
-            components: [new ActionRowBuilder().addComponents(btn)] 
+            components: [row1, row2] 
         });
-        console.log(`✅ Auto-vouch posted in ${guild.name}`);
+
+        setTimeout(async () => {
+            try {
+                await message.reply({
+                    embeds: [new EmbedBuilder()
+                        .setColor('#FEE75C')
+                        .setDescription('🤖 **Vouch automatically verified by Cosmic Bot System**')
+                    ]
+                });
+            } catch (e) {}
+        }, 5000);
+
+        console.log(`✅ Auto-vouch posted in ${guild.name} (${vouchAmount} rep)`);
     } catch (e) {
         console.error('Error generating vouch:', e);
     }
@@ -258,7 +327,7 @@ async function generateFakeVouch(guildId) {
 function startVouchLoop(guildId) {
     stopVouchLoop(guildId);
     const conf = getServerConfig(guildId);
-    console.log(`🔄 Starting auto-vouch loop for ${guildId} (interval: ${conf.intervalTime/1000}s)`);
+    console.log(`🔄 Starting auto-vouch for ${guildId} (every ${conf.intervalTime/1000}s)`);
     const timer = setInterval(() => generateFakeVouch(guildId), conf.intervalTime);
     activeVouchTimers.set(guildId, timer);
 }
@@ -267,8 +336,123 @@ function stopVouchLoop(guildId) {
     if (activeVouchTimers.has(guildId)) {
         clearInterval(activeVouchTimers.get(guildId));
         activeVouchTimers.delete(guildId);
-        console.log(`🛑 Stopped auto-vouch loop for ${guildId}`);
+        console.log(`🛑 Stopped auto-vouch for ${guildId}`);
     }
+}
+
+// ===================== SCAM ALERT SYSTEM =====================
+async function sendScamAlert(guild, staffMember, victim, reason) {
+    const conf = getServerConfig(guild.id);
+    
+    // Check if role is configured
+    if (!conf.scamAlertRoleId) {
+        return {
+            success: false,
+            error: '❌ Scam alert role not configured! Use `!dashboard` to set it up.'
+        };
+    }
+
+    // Check if victim is the bot or staff
+    if (victim.id === client.user.id) {
+        return {
+            success: false,
+            error: '❌ You cannot scam alert the bot!'
+        };
+    }
+
+    if (victim.id === staffMember.id) {
+        return {
+            success: false,
+            error: '❌ You cannot scam alert yourself!'
+        };
+    }
+
+    // Check cooldown per user
+    const cooldownKey = `scam_${victim.id}`;
+    if (scamAlertCooldowns.has(cooldownKey)) {
+        const remaining = scamAlertCooldowns.get(cooldownKey) - Date.now();
+        if (remaining > 0) {
+            return {
+                success: false,
+                error: `⏳ This user was recently scam alerted. Wait ${formatTime(remaining)}.`
+            };
+        }
+    }
+
+    // Set 5 minute cooldown
+    scamAlertCooldowns.set(cooldownKey, Date.now() + 300000);
+    setTimeout(() => scamAlertCooldowns.delete(cooldownKey), 300000);
+
+    // Create the scam alert embed
+    const embed = new EmbedBuilder()
+        .setColor('#ED4245')
+        .setTitle('🚨 SCAM ALERT')
+        .setDescription(conf.scamAlertMessage)
+        .addFields(
+            { name: '👤 Accused User', value: `${victim}`, inline: true },
+            { name: '🛡️ Reported By', value: `${staffMember}`, inline: true },
+            { name: '📝 Reason', value: reason || 'Suspicious activity detected', inline: false },
+            { name: '⏱️ Time', value: `<t:${Math.floor(Date.now()/1000)}:F>`, inline: true },
+            { name: '📊 Status', value: '⏳ Awaiting decision', inline: true }
+        )
+        .setThumbnail(victim.displayAvatarURL({ dynamic: true, size: 256 }))
+        .setFooter({ text: 'Cosmic™ Security System • Choose wisely', iconURL: guild.iconURL({ dynamic: true }) })
+        .setTimestamp();
+
+    // Create buttons
+    const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId(`scam_join_${victim.id}`)
+            .setLabel('✅ Join Us')
+            .setStyle(ButtonStyle.Success)
+            .setEmoji('🤝'),
+        new ButtonBuilder()
+            .setCustomId(`scam_leave_${victim.id}`)
+            .setLabel('❌ Leave Us')
+            .setStyle(ButtonStyle.Danger)
+            .setEmoji('🚪')
+    );
+
+    // Send to the victim's DMs first
+    let dmSent = false;
+    try {
+        await victim.send({
+            embeds: [embed],
+            components: [row]
+        });
+        dmSent = true;
+    } catch (error) {
+        console.log(`Couldn't DM ${victim.user.username}`);
+    }
+
+    // Also send to a log channel if configured
+    let logMessage = null;
+    if (conf.scamAlertLogChannel) {
+        const logChan = guild.channels.cache.get(conf.scamAlertLogChannel);
+        if (logChan) {
+            const logEmbed = new EmbedBuilder()
+                .setColor('#ED4245')
+                .setTitle('🚨 SCAM ALERT TRIGGERED')
+                .setDescription(`A scam alert was issued for ${victim}`)
+                .addFields(
+                    { name: '👤 Accused', value: `${victim} (\`${victim.id}\`)`, inline: true },
+                    { name: '🛡️ Reported By', value: `${staffMember}`, inline: true },
+                    { name: '📝 Reason', value: reason || 'Suspicious activity detected', inline: false },
+                    { name: '💬 DM Status', value: dmSent ? '✅ Sent' : '❌ Failed (DMs closed)', inline: true },
+                    { name: '⏱️ Time', value: `<t:${Math.floor(Date.now()/1000)}:F>`, inline: true }
+                )
+                .setTimestamp();
+            
+            logMessage = await logChan.send({ embeds: [logEmbed] });
+        }
+    }
+
+    return {
+        success: true,
+        dmSent: dmSent,
+        logMessage: logMessage,
+        embed: embed
+    };
 }
 
 // ===================== DASHBOARD =====================
@@ -281,11 +465,13 @@ async function getDashboard(guildId, pageName) {
         .setCustomId('dash_nav_menu')
         .setPlaceholder('📂 Navigate Dashboard...')
         .addOptions([
-            { label: 'Home', value: 'nav_home', emoji: '🏠' },
-            { label: 'MM Setup', value: 'nav_mm_setup', emoji: '🤝' },
-            { label: 'Vouch Setup', value: 'nav_vouch_setup', emoji: '🎫' },
-            { label: 'Settings', value: 'nav_settings', emoji: '⚙️' },
-            { label: 'Commands', value: 'nav_cmds', emoji: '📜' }
+            { label: '🏠 Home', value: 'nav_home' },
+            { label: '🤝 MM Setup', value: 'nav_mm_setup' },
+            { label: '🎫 Vouch Setup', value: 'nav_vouch_setup' },
+            { label: '🚨 Scam Alert', value: 'nav_scam_setup' },
+            { label: '⚙️ Settings', value: 'nav_settings' },
+            { label: '📜 Commands', value: 'nav_cmds' },
+            { label: '📊 Stats', value: 'nav_stats' }
         ]);
     const navRow = new ActionRowBuilder().addComponents(navMenu);
 
@@ -294,11 +480,13 @@ async function getDashboard(guildId, pageName) {
             embed.setTitle('⚙️ Central Control Panel')
                 .setDescription(
                     `**Current Prefix:** \`${conf.prefix}\`\n\n` +
-                    `**Staff Role:** ${conf.staffRoleId ? `<@&${conf.staffRoleId}>` : '❌ Not Set'}\n` +
-                    `**Category:** ${conf.ticketCategoryId ? `<#${conf.ticketCategoryId}>` : '❌ Not Set'}\n` +
-                    `**Logs:** ${conf.logChannelId ? `<#${conf.logChannelId}>` : '❌ Not Set'}\n\n` +
-                    `**Auto-Vouch Status:** ${conf.running ? '🟢 Running' : '🔴 Stopped'}\n` +
-                    `**Vouch Channel:** ${conf.vouchChannelId ? `<#${conf.vouchChannelId}>` : '❌ Not Set'}`
+                    `**🛡️ Staff Role:** ${conf.staffRoleId ? `<@&${conf.staffRoleId}>` : '❌ Not Set'}\n` +
+                    `**📁 Category:** ${conf.ticketCategoryId ? `<#${conf.ticketCategoryId}>` : '❌ Not Set'}\n` +
+                    `**📝 Logs:** ${conf.logChannelId ? `<#${conf.logChannelId}>` : '❌ Not Set'}\n\n` +
+                    `**🎫 Auto-Vouch Status:** ${conf.running ? '🟢 Running' : '🔴 Stopped'}\n` +
+                    `**📊 Total Tickets:** ${conf.ticketCounter || 0}\n` +
+                    `**⏱️ Interval:** ${formatTime(conf.intervalTime)}\n\n` +
+                    `**🚨 Scam Alert System:** ${conf.scamAlertRoleId ? '✅ Configured' : '❌ Not Configured'}`
                 );
             components = [
                 navRow,
@@ -344,7 +532,8 @@ async function getDashboard(guildId, pageName) {
         case 'vouch_setup':
             embed.setTitle('🎫 Vouch Configuration')
                 .setDescription(
-                    `**Current Interval:** \`${conf.intervalTime / 1000}s\`\n\n` +
+                    `**Current Interval:** \`${formatTime(conf.intervalTime)}\`\n` +
+                    `**Vouch Amount Range:** ${conf.vouchMinAmount} - ${conf.vouchMaxAmount}\n\n` +
                     `**Target Role (Receives):** ${conf.targetRoleId ? `<@&${conf.targetRoleId}>` : '❌ Not Set'}\n` +
                     `**Giver Role (Gives):** ${conf.giverRoleId ? `<@&${conf.giverRoleId}>` : '❌ Not Set'}\n` +
                     `**Vouch Channel:** ${conf.vouchChannelId ? `<#${conf.vouchChannelId}>` : '❌ Not Set'}`
@@ -371,6 +560,39 @@ async function getDashboard(guildId, pageName) {
                     new ButtonBuilder()
                         .setCustomId('change_vouch_interval')
                         .setLabel('⏱️ Set Interval')
+                        .setStyle(ButtonStyle.Primary),
+                    new ButtonBuilder()
+                        .setCustomId('change_vouch_amount')
+                        .setLabel('🔢 Set Amount Range')
+                        .setStyle(ButtonStyle.Secondary)
+                )
+            ];
+            break;
+
+        case 'scam_setup':
+            embed.setTitle('🚨 Scam Alert Configuration')
+                .setDescription(
+                    `**Scam Alert Role:** ${conf.scamAlertRoleId ? `<@&${conf.scamAlertRoleId}>` : '❌ Not Set'}\n` +
+                    `**Log Channel:** ${conf.scamAlertLogChannel ? `<#${conf.scamAlertLogChannel}>` : '❌ Not Set'}\n\n` +
+                    `**Message Preview:**\n${conf.scamAlertMessage.substring(0, 100)}...`
+                );
+            components = [
+                navRow,
+                new ActionRowBuilder().addComponents(
+                    new RoleSelectMenuBuilder()
+                        .setCustomId('scam_set_role')
+                        .setPlaceholder('Select Scam Alert Role (Join Role)')
+                ),
+                new ActionRowBuilder().addComponents(
+                    new ChannelSelectMenuBuilder()
+                        .setCustomId('scam_set_log')
+                        .setPlaceholder('Select Scam Alert Log Channel')
+                        .addChannelTypes(ChannelType.GuildText)
+                ),
+                new ActionRowBuilder().addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('scam_edit_messages')
+                        .setLabel('✏️ Edit Messages')
                         .setStyle(ButtonStyle.Primary)
                 )
             ];
@@ -390,6 +612,27 @@ async function getDashboard(guildId, pageName) {
             ];
             break;
 
+        case 'stats':
+            const totalTickets = conf.ticketCounter || 0;
+            const totalVouches = userVouchCounts.size;
+            let topVouched = '';
+            if (userVouchCounts.size > 0) {
+                const sorted = [...userVouchCounts.entries()].sort((a, b) => b[1] - a[1]);
+                topVouched = sorted.slice(0, 5).map(([id, count], i) => 
+                    `${i+1}. <@${id}> - ${count} vouches`
+                ).join('\n');
+            }
+            embed.setTitle('📊 Server Statistics')
+                .setDescription(
+                    `**Total Tickets:** ${totalTickets}\n` +
+                    `**Total Vouches Given:** ${totalVouches}\n` +
+                    `**Auto-Vouch Status:** ${conf.running ? '🟢 Active' : '🔴 Inactive'}\n` +
+                    `**Scam Alert System:** ${conf.scamAlertRoleId ? '✅ Configured' : '❌ Not Configured'}\n\n` +
+                    `**🏆 Top Vouched Users:**\n${topVouched || 'No vouches yet'}`
+                );
+            components = [navRow];
+            break;
+
         case 'cmds':
             embed.setTitle('📜 Command Directory')
                 .setDescription(
@@ -403,14 +646,16 @@ async function getDashboard(guildId, pageName) {
                     `> \`${conf.prefix}fban @user\` - Fake ban\n\n` +
                     `**🤝 Tickets**\n` +
                     `> \`${conf.prefix}setup-ticket\` - Create ticket button\n` +
-                    `> \`${conf.prefix}close\` - Close current ticket\n\n` +
-                    `**⚙️ Configuration**\n` +
-                    `> \`${conf.prefix}whitelist @user\` - Manage permissions\n` +
-                    `> \`${conf.prefix}afk\` - Toggle AFK mode\n\n` +
+                    `> \`${conf.prefix}close\` - Close current ticket\n` +
+                    `> \`${conf.prefix}ontop @user <reason>\` - **🚨 SCAM ALERT system**\n\n` +
                     `**🎫 Auto-Vouch**\n` +
                     `> \`${conf.prefix}vouch start\` - Start auto-vouch\n` +
                     `> \`${conf.prefix}vouch stop\` - Stop auto-vouch\n` +
-                    `> \`${conf.prefix}vouch status\` - Check vouch status`
+                    `> \`${conf.prefix}vouch status\` - Check vouch status\n\n` +
+                    `**⚙️ Configuration**\n` +
+                    `> \`${conf.prefix}whitelist @user\` - Manage permissions\n` +
+                    `> \`${conf.prefix}afk\` - Toggle AFK mode\n` +
+                    `> \`${conf.prefix}stats\` - View server statistics`
                 );
             components = [navRow];
             break;
@@ -495,7 +740,8 @@ client.on('messageCreate', async (message) => {
                     step: 'AWAITING_TRADER2',
                     dealDetails: null,
                     claimedBy: null,
-                    confirmationEmbedMessageId: null
+                    confirmationEmbedMessageId: null,
+                    createdAt: Date.now()
                 };
                 activeTrades.set(message.channel.id, tradeState);
             }
@@ -558,7 +804,11 @@ client.on('messageCreate', async (message) => {
                 new ButtonBuilder()
                     .setCustomId('close_ticket')
                     .setLabel('🔒 Close')
-                    .setStyle(ButtonStyle.Danger)
+                    .setStyle(ButtonStyle.Danger),
+                new ButtonBuilder()
+                    .setCustomId('ontop_ticket')
+                    .setLabel('⬆️ On Top')
+                    .setStyle(ButtonStyle.Secondary)
             );
 
             return message.reply({ embeds: [embed], components: [row] });
@@ -597,7 +847,11 @@ client.on('messageCreate', async (message) => {
                 new ButtonBuilder()
                     .setCustomId('close_ticket')
                     .setLabel('🔒 Close')
-                    .setStyle(ButtonStyle.Danger)
+                    .setStyle(ButtonStyle.Danger),
+                new ButtonBuilder()
+                    .setCustomId('ontop_ticket')
+                    .setLabel('⬆️ On Top')
+                    .setStyle(ButtonStyle.Secondary)
             );
 
             const confirmMessage = await message.channel.send({ 
@@ -616,6 +870,7 @@ client.on('messageCreate', async (message) => {
     const args = isPing ? [] : message.content.slice(prefix.length).trim().split(/ +/);
     const command = isPing ? 'dashboard' : args.shift().toLowerCase();
     const isAdmin = message.member.permissions.has(PermissionFlagsBits.Administrator);
+    const isStaff = conf.staffRoleId ? message.member.roles.cache.has(conf.staffRoleId) : false;
 
     // ===================== DASHBOARD =====================
     if (command === 'dashboard') {
@@ -633,6 +888,65 @@ client.on('messageCreate', async (message) => {
 
         const dashboardData = await getDashboard(guildId, 'home');
         await message.channel.send(dashboardData);
+        return;
+    }
+
+    // ===================== SCAM ALERT / ONTOP COMMAND =====================
+    if (command === 'ontop') {
+        // Check if user is staff or admin
+        if (!isStaff && !isAdmin) {
+            return message.reply({
+                embeds: [new EmbedBuilder()
+                    .setColor('#ED4245')
+                    .setDescription('❌ This command is for staff only!')
+                ]
+            });
+        }
+
+        // Get the victim
+        const victim = message.mentions.members.first();
+        if (!victim) {
+            return message.reply({
+                embeds: [new EmbedBuilder()
+                    .setColor('#ED4245')
+                    .setDescription(`❌ Usage: \`${prefix}ontop @user <reason>\`\nExample: \`${prefix}ontop @user Scamming multiple users\``)
+                ]
+            });
+        }
+
+        // Get the reason (everything after the mention)
+        const reason = args.slice(1).join(' ') || 'Suspicious activity detected';
+
+        // Send the scam alert
+        const result = await sendScamAlert(message.guild, message.member, victim, reason);
+
+        if (!result.success) {
+            return message.reply({
+                embeds: [new EmbedBuilder()
+                    .setColor('#ED4245')
+                    .setDescription(result.error)
+                ]
+            });
+        }
+
+        // Reply to staff
+        const replyEmbed = new EmbedBuilder()
+            .setColor('#2ECC71')
+            .setTitle('✅ Scam Alert Sent')
+            .setDescription(
+                `🚨 Scam alert has been sent to ${victim}\n` +
+                `📝 Reason: ${reason}\n` +
+                `💬 DM Status: ${result.dmSent ? '✅ Delivered' : '❌ Failed (DMs closed)'}\n\n` +
+                `📌 The victim will see two buttons:\n` +
+                `• **Join Us** → Gets the scam alert role\n` +
+                `• **Leave Us** → Gets kicked from the server`
+            )
+            .setTimestamp();
+
+        await message.reply({ embeds: [replyEmbed] });
+        
+        // Delete the command message
+        await message.delete().catch(() => {});
         return;
     }
 
@@ -658,7 +972,7 @@ client.on('messageCreate', async (message) => {
 
     // ===================== CLOSE TICKET =====================
     if (command === 'close' && message.channel.name.startsWith('mm-')) {
-        if (!conf.staffRoleId || !message.member.roles.cache.has(conf.staffRoleId) && !isAdmin) {
+        if (!isStaff && !isAdmin) {
             return message.reply('❌ Staff access required.');
         }
 
@@ -761,6 +1075,32 @@ client.on('messageCreate', async (message) => {
                 ]
             });
         }
+        return;
+    }
+
+    // ===================== STATS =====================
+    if (command === 'stats') {
+        const totalTickets = conf.ticketCounter || 0;
+        const totalVouches = userVouchCounts.size;
+        let topVouched = '';
+        if (userVouchCounts.size > 0) {
+            const sorted = [...userVouchCounts.entries()].sort((a, b) => b[1] - a[1]);
+            topVouched = sorted.slice(0, 5).map(([id, count], i) => 
+                `${i+1}. <@${id}> - ${count} vouches`
+            ).join('\n');
+        }
+        const embed = new EmbedBuilder()
+            .setColor('#2B2D31')
+            .setTitle('📊 Server Statistics')
+            .addFields(
+                { name: '📝 Total Tickets', value: `${totalTickets}`, inline: true },
+                { name: '🎫 Total Vouches', value: `${totalVouches}`, inline: true },
+                { name: '🟢 Auto-Vouch', value: conf.running ? 'Active' : 'Inactive', inline: true },
+                { name: '🚨 Scam Alert System', value: conf.scamAlertRoleId ? '✅ Configured' : '❌ Not Configured', inline: true },
+                { name: '🏆 Top Vouched', value: topVouched || 'No vouches yet', inline: false }
+            )
+            .setTimestamp();
+        await message.reply({ embeds: [embed] });
         return;
     }
 
@@ -989,10 +1329,11 @@ client.on('messageCreate', async (message) => {
         if (subCommand === 'status') {
             const conf = getServerConfig(guildId);
             const status = conf.running ? '🟢 Running' : '🔴 Stopped';
-            const interval = conf.intervalTime / 1000;
+            const interval = formatTime(conf.intervalTime);
             const channel = conf.vouchChannelId ? `<#${conf.vouchChannelId}>` : 'Not Set';
             const target = conf.targetRoleId ? `<@&${conf.targetRoleId}>` : 'Not Set';
             const giver = conf.giverRoleId ? `<@&${conf.giverRoleId}>` : 'Not Set';
+            const totalVouches = userVouchCounts.size;
             
             return message.reply({
                 embeds: [new EmbedBuilder()
@@ -1000,11 +1341,13 @@ client.on('messageCreate', async (message) => {
                     .setTitle('🎫 Auto-Vouch Status')
                     .addFields(
                         { name: 'Status', value: status, inline: true },
-                        { name: 'Interval', value: `${interval}s`, inline: true },
-                        { name: 'Channel', value: channel, inline: true },
+                        { name: 'Interval', value: interval, inline: true },
+                        { name: 'Total Vouches', value: `${totalVouches}`, inline: true },
+                        { name: 'Channel', value: channel, inline: false },
                         { name: 'Target Role', value: target, inline: true },
                         { name: 'Giver Role', value: giver, inline: true }
                     )
+                    .setTimestamp()
                 ]
             });
         }
@@ -1031,6 +1374,133 @@ client.on('interactionCreate', async (interaction) => {
     const conf = getServerConfig(guildId);
     const user = interaction.user;
 
+    // ===== SCAM ALERT BUTTONS =====
+    if (interaction.customId?.startsWith('scam_join_') || interaction.customId?.startsWith('scam_leave_')) {
+        const victimId = interaction.customId.split('_')[2];
+        const action = interaction.customId.split('_')[1];
+        const isJoin = action === 'join';
+
+        // Verify this is the victim clicking
+        if (user.id !== victimId) {
+            return interaction.reply({
+                content: '❌ This scam alert is not for you!',
+                ephemeral: true
+            });
+        }
+
+        const victim = await interaction.guild.members.fetch(victimId).catch(() => null);
+        if (!victim) {
+            return interaction.reply({
+                content: '❌ You are no longer in this server.',
+                ephemeral: true
+            });
+        }
+
+        if (isJoin) {
+            // JOIN: Give the role
+            const role = interaction.guild.roles.cache.get(conf.scamAlertRoleId);
+            if (role) {
+                await victim.roles.add(role);
+                
+                // Send confirmation
+                const embed = new EmbedBuilder()
+                    .setColor('#2ECC71')
+                    .setTitle('🤝 Welcome to the Trusted Community!')
+                    .setDescription(conf.scamAlertJoinMessage)
+                    .addFields(
+                        { name: 'Role Added', value: `${role}`, inline: true },
+                        { name: 'Decision', value: '✅ Joined', inline: true }
+                    )
+                    .setFooter({ text: 'Cosmic™ Security System' })
+                    .setTimestamp();
+
+                await interaction.update({
+                    embeds: [embed],
+                    components: []
+                });
+
+                // Log the decision
+                if (conf.scamAlertLogChannel) {
+                    const logChan = interaction.guild.channels.cache.get(conf.scamAlertLogChannel);
+                    if (logChan) {
+                        const logEmbed = new EmbedBuilder()
+                            .setColor('#2ECC71')
+                            .setTitle('✅ Scam Alert Resolved - JOINED')
+                            .setDescription(`${victim} chose to join and received ${role}`)
+                            .addFields(
+                                { name: 'User', value: `${victim} (\`${victim.id}\`)`, inline: true },
+                                { name: 'Decision', value: '✅ Joined', inline: true }
+                            )
+                            .setTimestamp();
+                        await logChan.send({ embeds: [logEmbed] });
+                    }
+                }
+
+                // Send a thank you DM
+                try {
+                    await victim.send({
+                        embeds: [new EmbedBuilder()
+                            .setColor('#2ECC71')
+                            .setTitle('🤝 Welcome to the Trusted Community!')
+                            .setDescription('You made the right choice! Enjoy your stay and stay safe! 🛡️')
+                        ]
+                    });
+                } catch (e) {}
+
+                return interaction.followUp({
+                    content: `✅ ${victim} has joined the trusted community! They received ${role}`,
+                    ephemeral: false
+                });
+            } else {
+                return interaction.reply({
+                    content: '❌ The role for scam alerts is not configured properly. Please contact an admin.',
+                    ephemeral: true
+                });
+            }
+        } else {
+            // LEAVE: Kick the user
+            const reason = 'Chose to leave during scam alert process';
+            await victim.kick(reason);
+
+            const embed = new EmbedBuilder()
+                .setColor('#ED4245')
+                .setTitle('🚪 Goodbye')
+                .setDescription(conf.scamAlertLeaveMessage)
+                .addFields(
+                    { name: 'Decision', value: '❌ Left', inline: true }
+                )
+                .setFooter({ text: 'Cosmic™ Security System' })
+                .setTimestamp();
+
+            await interaction.update({
+                embeds: [embed],
+                components: []
+            });
+
+            // Log the decision
+            if (conf.scamAlertLogChannel) {
+                const logChan = interaction.guild.channels.cache.get(conf.scamAlertLogChannel);
+                if (logChan) {
+                    const logEmbed = new EmbedBuilder()
+                        .setColor('#ED4245')
+                        .setTitle('❌ Scam Alert Resolved - LEFT')
+                        .setDescription(`${victim.user.username} chose to leave and was kicked`)
+                        .addFields(
+                            { name: 'User', value: `${victim.user.username} (\`${victim.id}\`)`, inline: true },
+                            { name: 'Decision', value: '❌ Left', inline: true }
+                        )
+                        .setTimestamp();
+                    await logChan.send({ embeds: [logEmbed] });
+                }
+            }
+
+            return interaction.followUp({
+                content: `❌ ${victim.user.username} chose to leave and was kicked.`,
+                ephemeral: false
+            });
+        }
+    }
+
     // ===== MODALS =====
     if (interaction.isModalSubmit()) {
         if (interaction.customId === 'prefix_modal') {
@@ -1055,6 +1525,41 @@ client.on('interactionCreate', async (interaction) => {
             if (updatedConf.running) startVouchLoop(guildId);
             
             const dashData = await getDashboard(guildId, 'vouch_setup');
+            return interaction.update(dashData);
+        }
+
+        if (interaction.customId === 'amount_modal') {
+            const min = parseInt(interaction.fields.getTextInputValue('min_amount'));
+            const max = parseInt(interaction.fields.getTextInputValue('max_amount'));
+            
+            if (isNaN(min) || isNaN(max) || min < 1 || max < min) {
+                return interaction.reply({
+                    content: '❌ Invalid amount. Min must be >= 1 and Max must be >= Min.',
+                    ephemeral: true
+                });
+            }
+            
+            await updateServerConfig(guildId, { 
+                vouchMinAmount: min, 
+                vouchMaxAmount: max 
+            });
+            
+            const dashData = await getDashboard(guildId, 'vouch_setup');
+            return interaction.update(dashData);
+        }
+
+        if (interaction.customId === 'scam_edit_messages_modal') {
+            const alertMsg = interaction.fields.getTextInputValue('alert_message');
+            const joinMsg = interaction.fields.getTextInputValue('join_message');
+            const leaveMsg = interaction.fields.getTextInputValue('leave_message');
+            
+            await updateServerConfig(guildId, {
+                scamAlertMessage: alertMsg,
+                scamAlertJoinMessage: joinMsg,
+                scamAlertLeaveMessage: leaveMsg
+            });
+            
+            const dashData = await getDashboard(guildId, 'scam_setup');
             return interaction.update(dashData);
         }
 
@@ -1158,13 +1663,15 @@ client.on('interactionCreate', async (interaction) => {
             'mm_set_staff': () => updateServerConfig(guildId, { staffRoleId: interaction.values[0] }),
             'mm_set_admin': () => updateServerConfig(guildId, { dashboardRoleId: interaction.values[0] }),
             'v_set_target': () => updateServerConfig(guildId, { targetRoleId: interaction.values[0] }),
-            'v_set_giver': () => updateServerConfig(guildId, { giverRoleId: interaction.values[0] })
+            'v_set_giver': () => updateServerConfig(guildId, { giverRoleId: interaction.values[0] }),
+            'scam_set_role': () => updateServerConfig(guildId, { scamAlertRoleId: interaction.values[0] })
         };
 
         const handler = handlers[interaction.customId];
         if (handler) {
             await handler();
-            const page = interaction.customId.startsWith('mm_') ? 'mm_setup' : 'vouch_setup';
+            const page = interaction.customId.startsWith('mm_') ? 'mm_setup' : 
+                        interaction.customId.startsWith('v_') ? 'vouch_setup' : 'scam_setup';
             const dashData = await getDashboard(guildId, page);
             return interaction.update(dashData);
         }
@@ -1175,13 +1682,15 @@ client.on('interactionCreate', async (interaction) => {
         const handlers = {
             'mm_set_category': () => updateServerConfig(guildId, { ticketCategoryId: interaction.values[0] }),
             'mm_set_logs': () => updateServerConfig(guildId, { logChannelId: interaction.values[0] }),
-            'v_set_chan': () => updateServerConfig(guildId, { vouchChannelId: interaction.values[0] })
+            'v_set_chan': () => updateServerConfig(guildId, { vouchChannelId: interaction.values[0] }),
+            'scam_set_log': () => updateServerConfig(guildId, { scamAlertLogChannel: interaction.values[0] })
         };
 
         const handler = handlers[interaction.customId];
         if (handler) {
             await handler();
-            const page = interaction.customId.startsWith('mm_') ? 'mm_setup' : 'vouch_setup';
+            const page = interaction.customId.startsWith('mm_') ? 'mm_setup' : 
+                        interaction.customId.startsWith('v_') ? 'vouch_setup' : 'scam_setup';
             const dashData = await getDashboard(guildId, page);
             return interaction.update(dashData);
         }
@@ -1203,6 +1712,69 @@ client.on('interactionCreate', async (interaction) => {
                         .setStyle(TextInputStyle.Short)
                         .setRequired(true)
                         .setPlaceholder('30s')
+                )
+            );
+        return interaction.showModal(modal);
+    }
+
+    // Change Vouch Amount
+    if (interaction.customId === 'change_vouch_amount') {
+        const modal = new ModalBuilder()
+            .setCustomId('amount_modal')
+            .setTitle('Set Vouch Amount Range')
+            .addComponents(
+                new ActionRowBuilder().addComponents(
+                    new TextInputBuilder()
+                        .setCustomId('min_amount')
+                        .setLabel('Minimum Vouch Amount')
+                        .setStyle(TextInputStyle.Short)
+                        .setRequired(true)
+                        .setPlaceholder('1')
+                ),
+                new ActionRowBuilder().addComponents(
+                    new TextInputBuilder()
+                        .setCustomId('max_amount')
+                        .setLabel('Maximum Vouch Amount')
+                        .setStyle(TextInputStyle.Short)
+                        .setRequired(true)
+                        .setPlaceholder('5')
+                )
+            );
+        return interaction.showModal(modal);
+    }
+
+    // Edit Scam Alert Messages
+    if (interaction.customId === 'scam_edit_messages') {
+        const modal = new ModalBuilder()
+            .setCustomId('scam_edit_messages_modal')
+            .setTitle('Edit Scam Alert Messages')
+            .addComponents(
+                new ActionRowBuilder().addComponents(
+                    new TextInputBuilder()
+                        .setCustomId('alert_message')
+                        .setLabel('Alert Message')
+                        .setStyle(TextInputStyle.Paragraph)
+                        .setRequired(true)
+                        .setPlaceholder('Enter the scam alert message...')
+                        .setValue(conf.scamAlertMessage || '⚠️ SCAM ALERT!...')
+                ),
+                new ActionRowBuilder().addComponents(
+                    new TextInputBuilder()
+                        .setCustomId('join_message')
+                        .setLabel('Join Message')
+                        .setStyle(TextInputStyle.Paragraph)
+                        .setRequired(true)
+                        .setPlaceholder('Message when user joins...')
+                        .setValue(conf.scamAlertJoinMessage || '✅ You chose to join us!...')
+                ),
+                new ActionRowBuilder().addComponents(
+                    new TextInputBuilder()
+                        .setCustomId('leave_message')
+                        .setLabel('Leave Message')
+                        .setStyle(TextInputStyle.Paragraph)
+                        .setRequired(true)
+                        .setPlaceholder('Message when user leaves...')
+                        .setValue(conf.scamAlertLeaveMessage || '❌ You chose to leave...')
                 )
             );
         return interaction.showModal(modal);
@@ -1258,15 +1830,85 @@ client.on('interactionCreate', async (interaction) => {
         return interaction.showModal(modal);
     }
 
-    // Vouch Back
-    if (interaction.customId === 'vouch_back_deco') {
-        return interaction.reply({
-            embeds: [new EmbedBuilder()
-                .setColor('#5865F2')
-                .setDescription('📤 Request sent to staff for confirmation. Please wait for a staff member to assist you.')
-            ],
+    // Vouch Confirm
+    if (interaction.customId === 'vouch_confirm') {
+        const embed = EmbedBuilder.from(interaction.message.embeds[0])
+            .setColor('#2ECC71')
+            .addFields(
+                { name: '✅ Status', value: 'Verified by community', inline: true },
+                { name: '🔒 Trust Score', value: '100%', inline: true }
+            );
+        
+        await interaction.update({ embeds: [embed], components: [] });
+        await interaction.followUp({
+            content: '✅ **Vouch confirmed and verified!**',
             ephemeral: true
         });
+        return;
+    }
+
+    // Vouch Report
+    if (interaction.customId === 'vouch_report') {
+        const modal = new ModalBuilder()
+            .setCustomId('report_modal')
+            .setTitle('Report Vouch')
+            .addComponents(
+                new ActionRowBuilder().addComponents(
+                    new TextInputBuilder()
+                        .setCustomId('report_reason')
+                        .setLabel('Reason for reporting')
+                        .setStyle(TextInputStyle.Paragraph)
+                        .setRequired(true)
+                        .setPlaceholder('Explain why this vouch should be removed...')
+                )
+            );
+        return interaction.showModal(modal);
+    }
+
+    // Vouch Back
+    if (interaction.customId === 'vouch_back') {
+        const embed = new EmbedBuilder()
+            .setColor('#5865F2')
+            .setTitle('🔄 Vouch Back Request')
+            .setDescription(`<@${user.id}> wants to vouch back!`)
+            .addFields(
+                { name: 'Status', value: '⏳ Pending staff approval' }
+            )
+            .setTimestamp();
+        
+        await interaction.reply({
+            embeds: [embed],
+            ephemeral: false
+        });
+        return;
+    }
+
+    // ===== TICKET BUTTONS =====
+    // On Top Ticket Button (moves ticket to top)
+    if (interaction.customId === 'ontop_ticket') {
+        if (!conf.staffRoleId || !interaction.member.roles.cache.has(conf.staffRoleId)) {
+            return interaction.reply({
+                content: '❌ Staff access only.',
+                ephemeral: true
+            });
+        }
+
+        try {
+            await interaction.channel.setPosition(0);
+            await interaction.reply({
+                embeds: [new EmbedBuilder()
+                    .setColor('#2ECC71')
+                    .setTitle('⬆️ Ticket Moved to Top')
+                    .setDescription('This ticket has been moved to the top of the category.')
+                ]
+            });
+        } catch (error) {
+            await interaction.reply({
+                content: '❌ Failed to move ticket. Check bot permissions.',
+                ephemeral: true
+            });
+        }
+        return;
     }
 
     // Create Ticket
@@ -1293,6 +1935,9 @@ client.on('interactionCreate', async (interaction) => {
         }
 
         try {
+            const newCounter = (conf.ticketCounter || 0) + 1;
+            await updateServerConfig(guildId, { ticketCounter: newCounter });
+
             const ticketChannel = await interaction.guild.channels.create({
                 name: `mm-${cleanName}`,
                 type: ChannelType.GuildText,
@@ -1310,17 +1955,19 @@ client.on('interactionCreate', async (interaction) => {
                 step: 'AWAITING_TRADER2',
                 dealDetails: null,
                 claimedBy: null,
-                confirmationEmbedMessageId: null
+                confirmationEmbedMessageId: null,
+                createdAt: Date.now()
             });
 
             await sendTicketLog(interaction.guild, conf, '🎫 Ticket Opened', 
-                `Ticket ${ticketChannel} created by ${user}`, '#2ECC71');
+                `Ticket ${ticketChannel} created by ${user} (Ticket #${newCounter})`, '#2ECC71');
 
             const embed = new EmbedBuilder()
                 .setColor('#5865F2')
                 .setTitle('🎫 Ticket Created')
                 .setDescription(
                     `Welcome <@${user.id}>,\n\n` +
+                    `**Ticket #${newCounter}**\n\n` +
                     `**Step 1:** Send the **Username** or **User ID** of the person you're trading with.\n` +
                     `**Step 2:** Provide the trade details.\n` +
                     `**Step 3:** Wait for confirmation from the other party.\n\n` +
@@ -1336,7 +1983,11 @@ client.on('interactionCreate', async (interaction) => {
                 new ButtonBuilder()
                     .setCustomId('close_ticket')
                     .setLabel('🔒 Close')
-                    .setStyle(ButtonStyle.Danger)
+                    .setStyle(ButtonStyle.Danger),
+                new ButtonBuilder()
+                    .setCustomId('ontop_ticket')
+                    .setLabel('⬆️ On Top')
+                    .setStyle(ButtonStyle.Secondary)
             );
 
             await ticketChannel.send({ content: `${user} 👋`, embeds: [embed], components: [row] });
@@ -1344,7 +1995,7 @@ client.on('interactionCreate', async (interaction) => {
             return interaction.editReply({
                 embeds: [new EmbedBuilder()
                     .setColor('#2ECC71')
-                    .setDescription(`✅ Ticket created: ${ticketChannel}`)
+                    .setDescription(`✅ Ticket #${newCounter} created: ${ticketChannel}`)
                 ]
             });
         } catch (error) {
@@ -1405,7 +2056,11 @@ client.on('interactionCreate', async (interaction) => {
             new ButtonBuilder()
                 .setCustomId('close_ticket')
                 .setLabel('🔒 Close')
-                .setStyle(ButtonStyle.Danger)
+                .setStyle(ButtonStyle.Danger),
+            new ButtonBuilder()
+                .setCustomId('ontop_ticket')
+                .setLabel('⬆️ On Top')
+                .setStyle(ButtonStyle.Secondary)
         );
 
         await interaction.update({
@@ -1444,7 +2099,11 @@ client.on('interactionCreate', async (interaction) => {
             new ButtonBuilder()
                 .setCustomId('close_ticket')
                 .setLabel('🔒 Close')
-                .setStyle(ButtonStyle.Danger)
+                .setStyle(ButtonStyle.Danger),
+            new ButtonBuilder()
+                .setCustomId('ontop_ticket')
+                .setLabel('⬆️ On Top')
+                .setStyle(ButtonStyle.Secondary)
         );
 
         if (tradeState && tradeState.step === 'AWAITING_TRADER2_CONFIRMATION') {
@@ -1494,7 +2153,11 @@ client.on('interactionCreate', async (interaction) => {
             new ButtonBuilder()
                 .setCustomId('close_ticket')
                 .setLabel('🔒 Close')
-                .setStyle(ButtonStyle.Danger)
+                .setStyle(ButtonStyle.Danger),
+            new ButtonBuilder()
+                .setCustomId('ontop_ticket')
+                .setLabel('⬆️ On Top')
+                .setStyle(ButtonStyle.Secondary)
         );
 
         if (tradeState && tradeState.step === 'AWAITING_TRADER2_CONFIRMATION') {
