@@ -152,7 +152,6 @@ async function sendTicketLog(guild, conf, title, description, color) {
     }
 }
 
-// ===================== PERMISSION CHECKERS =====================
 function hasStaffRole(member, conf) {
     if (!conf.staffRoles || conf.staffRoles.length === 0) return false;
     return conf.staffRoles.some(roleId => member.roles.cache.has(roleId));
@@ -175,29 +174,16 @@ const afkUsers = new Map();
 const userVouchCounts = new Map();
 const scamAlertCooldowns = new Map();
 
-const VOUCH_TEMPLATES = [
-    "🎫 **+{amount} Reputation**\n\n**From:** {giver}\n**To:** {target}\n\n📦 **Transaction:** {trade}\n\n✅ **Vouch verified by staff**",
-    "🌟 **+{amount} Vouch**\n\n{target} received a vouch from {giver}!\n\n💼 **Trade:** {trade}\n\n🛡️ *This transaction was successfully completed*",
-    "📊 **Reputation Update**\n\n**+{amount}** for {target}\n**Vouched by:** {giver}\n\n🔄 **Trade:** {trade}\n\n✨ *Trust is earned, not given*",
-    "🏆 **+{amount} Rep**\n\n{target} just got vouched by {giver}!\n\n📦 **Item:** {trade}\n\n🔒 *Secure transaction completed*"
-];
-
 const FAUX_TRADES = [
-    { item: "ROBUX", amount: "5000 R$", price: "20$", currency: "LTC" },
-    { item: "ROBUX", amount: "10k R$", price: "42$", currency: "SOL" },
-    { item: "ROBUX", amount: "2500 R$", price: "10$", currency: "PayPal" },
-    { item: "BLOX FRUITS", amount: "PERM BUDDHA", price: "20$", currency: "LTC" },
-    { item: "BLOX FRUITS", amount: "KITSUNE FRUIT", price: "15$", currency: "SOL" },
-    { item: "BLOX FRUITS", amount: "PERM DRAGON", price: "35$", currency: "BTC" },
-    { item: "ADOPT ME", amount: "FR JUNGLE EGG", price: "15$", currency: "SOL" },
-    { item: "ADOPT ME", amount: "NFR SHADOW DRAGON", price: "80$", currency: "BTC" },
-    { item: "VALORANT", amount: "2500 VP CARD", price: "15$", currency: "PayPal" },
-    { item: "DISCORD", amount: "1 YEAR NITRO", price: "12$", currency: "Card" },
-    { item: "STEAM", amount: "50$ GIFT CARD", price: "40$", currency: "Crypto" },
-    { item: "GROW A GARDEN", amount: "DRAGONFLY", price: "10$", currency: "LTC" },
-    { item: "BLOX FRUITS", amount: "PERM KITSUNE", price: "24$", currency: "LTC" },
-    { item: "ADOPT ME", amount: "MEGA FROST DRAGON", price: "120$", currency: "SOL" },
-    { item: "ROBUX", amount: "20k R$", price: "80$", currency: "BTC" }
+    "ROBUX: 5000 R$ W/T TAX FOR 20$ LTC",
+    "ROBUX: 10k R$ CLEAN FOR 42$ SOL",
+    "ROBUX: 2500 R$ AFTER TAX FOR 10$ PAYPAL",
+    "BLOX FRUITS: PERM BUDDHA FOR 20$ LTC",
+    "BLOX FRUITS: KITSUNE FRUIT FOR 15$ SOL",
+    "ADOPT ME: NFR SHADOW DRAGON FOR 80$ BTC",
+    "VALORANT: 2500 VP CARD FOR 15$ PAYPAL",
+    "DISCORD: 1 YEAR NITRO BOOST FOR 12$ CARD",
+    "STEAM: 50$ GIFT CARD FOR 40$ CRYPTO"
 ];
 
 // ===================== ANTI-NUKE =====================
@@ -269,18 +255,16 @@ async function generateFakeVouch(guildId) {
 
         const vouchAmount = Math.floor(Math.random() * (conf.vouchMaxAmount - conf.vouchMinAmount + 1)) + conf.vouchMinAmount;
         const trade = FAUX_TRADES[Math.floor(Math.random() * FAUX_TRADES.length)];
-        const tradeString = `${trade.item}: ${trade.amount} FOR ${trade.price} ${trade.currency}`;
-        const template = VOUCH_TEMPLATES[Math.floor(Math.random() * VOUCH_TEMPLATES.length)];
-        const description = template
-            .replace(/{amount}/g, vouchAmount)
-            .replace(/{giver}/g, `<@${randomGiver.id}>`)
-            .replace(/{target}/g, `<@${randomTarget.id}>`)
-            .replace(/{trade}/g, tradeString);
 
         const embed = new EmbedBuilder()
             .setColor('#2ECC71')
             .setTitle('✅ New Vouch Verified')
-            .setDescription(description)
+            .setDescription(
+                `**+${vouchAmount} Reputation**\n\n` +
+                `**From:** <@${randomGiver.id}>\n` +
+                `**To:** <@${randomTarget.id}>\n\n` +
+                `📦 **Transaction:** \`${trade}\``
+            )
             .setThumbnail(randomTarget.displayAvatarURL({ dynamic: true, size: 256 }))
             .addFields(
                 { name: '📊 Total Vouches', value: `${userVouchCounts.get(randomTarget.id) || 0} +${vouchAmount}`, inline: true },
@@ -293,7 +277,7 @@ async function generateFakeVouch(guildId) {
         const currentCount = userVouchCounts.get(randomTarget.id) || 0;
         userVouchCounts.set(randomTarget.id, currentCount + vouchAmount);
 
-        const row1 = new ActionRowBuilder().addComponents(
+        const row = new ActionRowBuilder().addComponents(
             new ButtonBuilder()
                 .setCustomId('vouch_confirm')
                 .setLabel('✅ Confirm')
@@ -301,10 +285,7 @@ async function generateFakeVouch(guildId) {
             new ButtonBuilder()
                 .setCustomId('vouch_report')
                 .setLabel('🚨 Report')
-                .setStyle(ButtonStyle.Danger)
-        );
-
-        const row2 = new ActionRowBuilder().addComponents(
+                .setStyle(ButtonStyle.Danger),
             new ButtonBuilder()
                 .setCustomId('vouch_back')
                 .setLabel('🔄 Vouch Back')
@@ -313,7 +294,7 @@ async function generateFakeVouch(guildId) {
 
         await channel.send({ 
             embeds: [embed], 
-            components: [row1, row2] 
+            components: [row] 
         });
 
         console.log(`✅ Auto-vouch posted in ${guild.name} (${vouchAmount} rep)`);
@@ -652,25 +633,24 @@ async function getDashboard(guildId, pageName) {
     return { embeds: [embed], components };
 }
 
-// ===================== HELP COMMAND =====================
 async function sendHelpMessage(message) {
     const embed = new EmbedBuilder()
         .setColor('#5865F2')
         .setTitle('🤝 Middleman System Guide')
         .setDescription('Here\'s how the middleman system works:')
         .addFields(
-            { name: '📋 **Step 1: Open a Ticket**', value: 'Click the **"Request Middleman"** button or use `!setup-ticket` to create a ticket channel.', inline: false },
-            { name: '👤 **Step 2: Add Trading Partner**', value: 'In your ticket, send the **username** or **ID** of the person you\'re trading with.', inline: false },
-            { name: '📝 **Step 3: Provide Deal Details**', value: 'Type the details of your trade (e.g., "Giving 5000 Robux for $20 PayPal").', inline: false },
-            { name: '🤝 **Step 4: Partner Confirms**', value: 'Your trading partner will **confirm** the deal details.', inline: false },
-            { name: '🛡️ **Step 5: Middleman Takes Over**', value: 'A staff member will **claim** the ticket and assist with the trade.', inline: false },
-            { name: '🔒 **Step 6: Complete Trade**', value: 'The middleman will ensure both parties complete their part of the trade safely.', inline: false }
+            { name: '📋 Step 1: Open a Ticket', value: 'Click the **"Request Middleman"** button or use `!setup-ticket` to create a ticket channel.', inline: false },
+            { name: '👤 Step 2: Add Trading Partner', value: 'In your ticket, send the **username** or **ID** of the person you\'re trading with.', inline: false },
+            { name: '📝 Step 3: Provide Deal Details', value: 'Type the details of your trade (e.g., "Giving 5000 Robux for $20 PayPal").', inline: false },
+            { name: '🤝 Step 4: Partner Confirms', value: 'Your trading partner will **confirm** the deal details.', inline: false },
+            { name: '🛡️ Step 5: Middleman Takes Over', value: 'A staff member will **claim** the ticket and assist with the trade.', inline: false },
+            { name: '🔒 Step 6: Complete Trade', value: 'The middleman will ensure both parties complete their part of the trade safely.', inline: false }
         )
         .addFields(
-            { name: '💡 **How It Works**', value: '**User 1** gives item to **Middleman** → **Middleman** verifies → **User 2** sends payment → **Middleman** gives item to **User 2**', inline: false }
+            { name: '💡 How It Works', value: '**User 1** gives item to **Middleman** → **Middleman** verifies → **User 2** sends payment → **Middleman** gives item to **User 2**', inline: false }
         )
         .addFields(
-            { name: '📌 **Ticket Commands**', value: '`!close` - Close ticket (Staff only)\n`!add @user` - Add user to ticket (Staff only)', inline: false }
+            { name: '📌 Ticket Commands', value: '`!close` - Close ticket (Staff only)\n`!add @user` - Add user to ticket (Staff only)', inline: false }
         )
         .setFooter({ text: 'Cosmic™ Middleman System • Safe & Secure Trades' })
         .setTimestamp();
@@ -721,7 +701,8 @@ client.on('messageCreate', async (message) => {
     const conf = getServerConfig(guildId);
     const prefix = conf.prefix;
 
-    // ===== IMPORTANT: Bot ping does NOT open dashboard =====    if (message.content === `<@${client.user.id}>`) {
+    // Bot ping - shows help, not dashboard
+    if (message.content === `<@${client.user.id}>`) {
         return message.reply({
             embeds: [new EmbedBuilder()
                 .setColor('#5865F2')
@@ -752,13 +733,13 @@ client.on('messageCreate', async (message) => {
         }
     });
 
-    // ===================== HELP COMMAND =====================
+    // Help command
     if (message.content === `${prefix}help` || message.content === `${prefix}help middleman`) {
         await sendHelpMessage(message);
         return;
     }
 
-    // Ticket System
+    // Ticket System - channel logic
     if (message.channel.name.startsWith('mm-')) {
         let tradeState = activeTrades.get(message.channel.id);
         if (!tradeState) {
@@ -898,7 +879,7 @@ client.on('messageCreate', async (message) => {
     const isAdmin = message.member.permissions.has(PermissionFlagsBits.Administrator);
     const isStaff = hasStaffRole(message.member, conf);
 
-    // ===================== DASHBOARD =====================
+    // Dashboard
     if (command === 'dashboard') {
         const hasDashRole = hasDashboardRole(message.member, conf);
         const hasAdmin = hasAdminRole(message.member, conf);
@@ -917,7 +898,7 @@ client.on('messageCreate', async (message) => {
         return;
     }
 
-    // ===================== SCAM ALERT / ONTOP COMMAND =====================
+    // Ontop - Scam Alert
     if (command === 'ontop') {
         if (!isStaff && !isAdmin) {
             return message.reply({
@@ -978,7 +959,7 @@ client.on('messageCreate', async (message) => {
         return;
     }
 
-    // ===================== SETUP TICKET =====================
+    // Setup Ticket
     if (command === 'setup-ticket' && isAdmin) {
         const embed = new EmbedBuilder()
             .setColor('#2B2D31')
@@ -998,7 +979,7 @@ client.on('messageCreate', async (message) => {
         return;
     }
 
-    // ===================== CLOSE TICKET =====================
+    // Close Ticket
     if (command === 'close' && message.channel.name.startsWith('mm-')) {
         if (!isStaff && !isAdmin) {
             return message.reply('❌ Staff access required.');
@@ -1019,7 +1000,7 @@ client.on('messageCreate', async (message) => {
         return;
     }
 
-    // ===================== ADD USER TO TICKET =====================
+    // Add user to ticket
     if (command === 'add' && message.channel.name.startsWith('mm-')) {
         if (!isStaff && !isAdmin) {
             return message.reply('❌ This command is for staff only!');
@@ -1062,7 +1043,7 @@ client.on('messageCreate', async (message) => {
         return;
     }
 
-    // ===================== WHITELIST =====================
+    // Whitelist
     if (command === 'whitelist' && (isAdmin || message.author.id === message.guild.ownerId)) {
         const target = message.mentions.members.first();
         if (!target) {
@@ -1118,7 +1099,7 @@ client.on('messageCreate', async (message) => {
         return;
     }
 
-    // ===================== UNBAN =====================
+    // Unban
     if (command === 'unban' && message.member.permissions.has(PermissionFlagsBits.BanMembers)) {
         const targetId = args[0];
         if (!targetId) {
@@ -1149,7 +1130,7 @@ client.on('messageCreate', async (message) => {
         return;
     }
 
-    // ===================== AFK =====================
+    // AFK
     if (command === 'afk') {
         const embed = new EmbedBuilder()
             .setColor('#2B2D31')
@@ -1172,7 +1153,7 @@ client.on('messageCreate', async (message) => {
         return;
     }
 
-    // ===================== PURGE =====================
+    // Purge
     if (command === 'purge' && message.member.permissions.has(PermissionFlagsBits.ManageMessages)) {
         const num = parseInt(args[0]);
         if (isNaN(num) || num < 1 || num > 99) {
@@ -1204,7 +1185,7 @@ client.on('messageCreate', async (message) => {
         return;
     }
 
-    // ===================== MUTE =====================
+    // Mute
     if (command === 'mute' && message.member.permissions.has(PermissionFlagsBits.ModerateMembers)) {
         const target = message.mentions.members.first();
         if (!target || !args[1]) {
@@ -1245,7 +1226,7 @@ client.on('messageCreate', async (message) => {
         return;
     }
 
-    // ===================== KICK =====================
+    // Kick
     if (command === 'kick' && message.member.permissions.has(PermissionFlagsBits.KickMembers)) {
         const target = message.mentions.members.first();
         if (!target) {
@@ -1279,7 +1260,7 @@ client.on('messageCreate', async (message) => {
         return;
     }
 
-    // ===================== BAN =====================
+    // Ban
     if (command === 'ban' && message.member.permissions.has(PermissionFlagsBits.BanMembers)) {
         const target = message.mentions.members.first();
         if (!target) {
@@ -1313,7 +1294,7 @@ client.on('messageCreate', async (message) => {
         return;
     }
 
-    // ===================== FBAN =====================
+    // FBan
     if (command === 'fban' && isAdmin) {
         const target = message.mentions.members.first();
         if (!target) {
@@ -1335,7 +1316,7 @@ client.on('messageCreate', async (message) => {
         return;
     }
 
-    // ===================== VOUCH COMMANDS =====================
+    // Vouch commands
     if (command === 'vouch') {
         const subCommand = args[0]?.toLowerCase();
         
@@ -1419,16 +1400,14 @@ client.on('interactionCreate', async (interaction) => {
     const conf = getServerConfig(guildId);
     const user = interaction.user;
 
-    // ===== SCAM ALERT BUTTONS - FIXED =====
+    // ===== SCAM ALERT BUTTONS =====
     if (interaction.customId?.startsWith('scam_join_') || interaction.customId?.startsWith('scam_leave_')) {
-        // Make sure to defer first to prevent interaction failed
         await interaction.deferUpdate();
         
         const victimId = interaction.customId.split('_')[2];
         const action = interaction.customId.split('_')[1];
         const isJoin = action === 'join';
 
-        // Verify this is the victim
         if (user.id !== victimId) {
             return interaction.followUp({
                 content: '❌ This scam alert is not for you!',
@@ -1445,7 +1424,6 @@ client.on('interactionCreate', async (interaction) => {
         }
 
         if (isJoin) {
-            // JOIN: Give the role
             const role = interaction.guild.roles.cache.get(conf.scamAlertRoleId);
             if (role) {
                 try {
@@ -1467,7 +1445,6 @@ client.on('interactionCreate', async (interaction) => {
                         components: []
                     });
 
-                    // Log the decision
                     if (conf.scamAlertLogChannel) {
                         const logChan = interaction.guild.channels.cache.get(conf.scamAlertLogChannel);
                         if (logChan) {
@@ -1484,7 +1461,6 @@ client.on('interactionCreate', async (interaction) => {
                         }
                     }
 
-                    // Send confirmation DM
                     try {
                         await victim.send({
                             embeds: [new EmbedBuilder()
@@ -1513,7 +1489,6 @@ client.on('interactionCreate', async (interaction) => {
                 });
             }
         } else {
-            // LEAVE: Kick the user
             try {
                 await victim.kick('Chose to leave during scam alert process');
 
@@ -1532,7 +1507,6 @@ client.on('interactionCreate', async (interaction) => {
                     components: []
                 });
 
-                // Log the decision
                 if (conf.scamAlertLogChannel) {
                     const logChan = interaction.guild.channels.cache.get(conf.scamAlertLogChannel);
                     if (logChan) {
@@ -1719,7 +1693,7 @@ client.on('interactionCreate', async (interaction) => {
         }
     }
 
-    // ===== ROLE SELECT MENUS - FIXED =====
+    // ===== ROLE SELECT MENUS =====
     if (interaction.isRoleSelectMenu()) {
         await interaction.deferUpdate();
         
@@ -1778,7 +1752,7 @@ client.on('interactionCreate', async (interaction) => {
         return;
     }
 
-    // ===== CHANNEL SELECT MENUS - FIXED =====
+    // ===== CHANNEL SELECT MENUS =====
     if (interaction.isChannelSelectMenu()) {
         await interaction.deferUpdate();
         
@@ -1815,7 +1789,6 @@ client.on('interactionCreate', async (interaction) => {
     // ===== BUTTONS =====
     if (!interaction.isButton()) return;
 
-    // Change Vouch Interval
     if (interaction.customId === 'change_vouch_interval') {
         const modal = new ModalBuilder()
             .setCustomId('interval_modal')
@@ -1833,7 +1806,6 @@ client.on('interactionCreate', async (interaction) => {
         return interaction.showModal(modal);
     }
 
-    // Change Vouch Amount
     if (interaction.customId === 'change_vouch_amount') {
         const modal = new ModalBuilder()
             .setCustomId('amount_modal')
@@ -1859,7 +1831,6 @@ client.on('interactionCreate', async (interaction) => {
         return interaction.showModal(modal);
     }
 
-    // Edit Scam Alert Messages
     if (interaction.customId === 'scam_edit_messages') {
         const modal = new ModalBuilder()
             .setCustomId('scam_edit_messages_modal')
@@ -1896,7 +1867,6 @@ client.on('interactionCreate', async (interaction) => {
         return interaction.showModal(modal);
     }
 
-    // Clear Staff Roles
     if (interaction.customId === 'clear_staff_roles') {
         await interaction.deferUpdate();
         await updateServerConfig(guildId, { staffRoles: [] });
@@ -1904,7 +1874,6 @@ client.on('interactionCreate', async (interaction) => {
         return interaction.editReply(dashData);
     }
 
-    // Clear Dashboard Roles
     if (interaction.customId === 'clear_dashboard_roles') {
         await interaction.deferUpdate();
         await updateServerConfig(guildId, { dashboardRoles: [] });
@@ -1912,7 +1881,6 @@ client.on('interactionCreate', async (interaction) => {
         return interaction.editReply(dashData);
     }
 
-    // Clear Admin Roles
     if (interaction.customId === 'clear_admin_roles') {
         await interaction.deferUpdate();
         await updateServerConfig(guildId, { adminRoles: [] });
@@ -1920,7 +1888,6 @@ client.on('interactionCreate', async (interaction) => {
         return interaction.editReply(dashData);
     }
 
-    // AFK DM
     if (interaction.customId.startsWith('afk_dm_')) {
         afkUsers.set(user.id, { dm: interaction.customId === 'afk_dm_yes' });
         return interaction.update({
@@ -1933,7 +1900,6 @@ client.on('interactionCreate', async (interaction) => {
         });
     }
 
-    // Toggle Auto-Vouch
     if (interaction.customId === 'v_toggle') {
         const currentConf = getServerConfig(guildId);
         const newRunning = !currentConf.running;
@@ -1951,7 +1917,6 @@ client.on('interactionCreate', async (interaction) => {
         return interaction.update(dashData);
     }
 
-    // Change Prefix
     if (interaction.customId === 'change_prefix') {
         const modal = new ModalBuilder()
             .setCustomId('prefix_modal')
@@ -1970,7 +1935,6 @@ client.on('interactionCreate', async (interaction) => {
         return interaction.showModal(modal);
     }
 
-    // Vouch Confirm
     if (interaction.customId === 'vouch_confirm') {
         await interaction.deferUpdate();
         const embed = EmbedBuilder.from(interaction.message.embeds[0])
@@ -1988,7 +1952,6 @@ client.on('interactionCreate', async (interaction) => {
         return;
     }
 
-    // Vouch Report
     if (interaction.customId === 'vouch_report') {
         const modal = new ModalBuilder()
             .setCustomId('report_modal')
@@ -2006,7 +1969,6 @@ client.on('interactionCreate', async (interaction) => {
         return interaction.showModal(modal);
     }
 
-    // Vouch Back
     if (interaction.customId === 'vouch_back') {
         const embed = new EmbedBuilder()
             .setColor('#5865F2')
@@ -2025,7 +1987,6 @@ client.on('interactionCreate', async (interaction) => {
     }
 
     // ===== TICKET BUTTONS =====
-    // Create Ticket
     if (interaction.customId === 'create_ticket') {
         await interaction.deferReply({ ephemeral: true });
         
@@ -2123,7 +2084,6 @@ client.on('interactionCreate', async (interaction) => {
         }
     }
 
-    // Edit Deal
     if (interaction.customId === 'edit_deal_btn') {
         const tradeState = activeTrades.get(interaction.channelId);
         if (!tradeState || user.id !== tradeState.trader1Id) {
@@ -2149,7 +2109,6 @@ client.on('interactionCreate', async (interaction) => {
         return interaction.showModal(modal);
     }
 
-    // Confirm Deal
     if (interaction.customId === 'confirm_deal_btn') {
         const tradeState = activeTrades.get(interaction.channelId);
         if (!tradeState || user.id !== tradeState.trader2Id) {
@@ -2188,7 +2147,6 @@ client.on('interactionCreate', async (interaction) => {
         return;
     }
 
-    // Claim Ticket
     if (interaction.customId === 'claim_ticket') {
         if (!hasStaffRole(interaction.member, conf) && !hasAdminRole(interaction.member, conf)) {
             return interaction.reply({ 
@@ -2237,7 +2195,6 @@ client.on('interactionCreate', async (interaction) => {
         return;
     }
 
-    // Unclaim Ticket
     if (interaction.customId.startsWith('unclaim_')) {
         const allowedStaffId = interaction.customId.split('_')[1];
         if (user.id !== allowedStaffId && !interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
@@ -2281,7 +2238,6 @@ client.on('interactionCreate', async (interaction) => {
         return;
     }
 
-    // Close Ticket
     if (interaction.customId === 'close_ticket') {
         if (!hasStaffRole(interaction.member, conf) && !hasAdminRole(interaction.member, conf)) {
             return interaction.reply({ 
