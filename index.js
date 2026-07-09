@@ -720,7 +720,17 @@ client.on('messageCreate', async (message) => {
     const guildId = message.guild.id;
     const conf = getServerConfig(guildId);
     const prefix = conf.prefix;
-    const isPing = message.content === `<@${client.user.id}>`;
+
+    // ===== IMPORTANT: Bot ping does NOT open dashboard =====    if (message.content === `<@${client.user.id}>`) {
+        return message.reply({
+            embeds: [new EmbedBuilder()
+                .setColor('#5865F2')
+                .setTitle('👋 Hey there!')
+                .setDescription(`Use \`${prefix}help\` to see available commands or \`${prefix}dashboard\` for the control panel.`)
+                .setFooter({ text: 'Cosmic™ Bot' })
+            ]
+        });
+    }
 
     // AFK System
     if (afkUsers.has(message.author.id)) {
@@ -881,10 +891,10 @@ client.on('messageCreate', async (message) => {
     }
 
     // Commands
-    if (!message.content.startsWith(prefix) && !isPing) return;
+    if (!message.content.startsWith(prefix)) return;
 
-    const args = isPing ? [] : message.content.slice(prefix.length).trim().split(/ +/);
-    const command = isPing ? 'dashboard' : args.shift().toLowerCase();
+    const args = message.content.slice(prefix.length).trim().split(/ +/);
+    const command = args.shift().toLowerCase();
     const isAdmin = message.member.permissions.has(PermissionFlagsBits.Administrator);
     const isStaff = hasStaffRole(message.member, conf);
 
@@ -1409,14 +1419,18 @@ client.on('interactionCreate', async (interaction) => {
     const conf = getServerConfig(guildId);
     const user = interaction.user;
 
-    // ===== SCAM ALERT BUTTONS =====
+    // ===== SCAM ALERT BUTTONS - FIXED =====
     if (interaction.customId?.startsWith('scam_join_') || interaction.customId?.startsWith('scam_leave_')) {
+        // Make sure to defer first to prevent interaction failed
+        await interaction.deferUpdate();
+        
         const victimId = interaction.customId.split('_')[2];
         const action = interaction.customId.split('_')[1];
         const isJoin = action === 'join';
 
+        // Verify this is the victim
         if (user.id !== victimId) {
-            return interaction.reply({
+            return interaction.followUp({
                 content: '❌ This scam alert is not for you!',
                 ephemeral: true
             });
@@ -1424,13 +1438,14 @@ client.on('interactionCreate', async (interaction) => {
 
         const victim = await interaction.guild.members.fetch(victimId).catch(() => null);
         if (!victim) {
-            return interaction.reply({
+            return interaction.followUp({
                 content: '❌ You are no longer in this server.',
                 ephemeral: true
             });
         }
 
         if (isJoin) {
+            // JOIN: Give the role
             const role = interaction.guild.roles.cache.get(conf.scamAlertRoleId);
             if (role) {
                 try {
@@ -1447,11 +1462,12 @@ client.on('interactionCreate', async (interaction) => {
                         .setFooter({ text: 'Cosmic™ Security System' })
                         .setTimestamp();
 
-                    await interaction.update({
+                    await interaction.editReply({
                         embeds: [embed],
                         components: []
                     });
 
+                    // Log the decision
                     if (conf.scamAlertLogChannel) {
                         const logChan = interaction.guild.channels.cache.get(conf.scamAlertLogChannel);
                         if (logChan) {
@@ -1468,6 +1484,7 @@ client.on('interactionCreate', async (interaction) => {
                         }
                     }
 
+                    // Send confirmation DM
                     try {
                         await victim.send({
                             embeds: [new EmbedBuilder()
@@ -1484,18 +1501,19 @@ client.on('interactionCreate', async (interaction) => {
                     });
                 } catch (error) {
                     console.error('Error adding role:', error);
-                    return interaction.reply({
+                    return interaction.followUp({
                         content: '❌ Failed to add role. Please contact an admin.',
                         ephemeral: true
                     });
                 }
             } else {
-                return interaction.reply({
+                return interaction.followUp({
                     content: '❌ The scam alert role is not configured properly.',
                     ephemeral: true
                 });
             }
         } else {
+            // LEAVE: Kick the user
             try {
                 await victim.kick('Chose to leave during scam alert process');
 
@@ -1509,11 +1527,12 @@ client.on('interactionCreate', async (interaction) => {
                     .setFooter({ text: 'Cosmic™ Security System' })
                     .setTimestamp();
 
-                await interaction.update({
+                await interaction.editReply({
                     embeds: [embed],
                     components: []
                 });
 
+                // Log the decision
                 if (conf.scamAlertLogChannel) {
                     const logChan = interaction.guild.channels.cache.get(conf.scamAlertLogChannel);
                     if (logChan) {
@@ -1536,7 +1555,7 @@ client.on('interactionCreate', async (interaction) => {
                 });
             } catch (error) {
                 console.error('Error kicking user:', error);
-                return interaction.reply({
+                return interaction.followUp({
                     content: '❌ Failed to kick user. Please contact an admin.',
                     ephemeral: true
                 });
@@ -1700,65 +1719,97 @@ client.on('interactionCreate', async (interaction) => {
         }
     }
 
-    // ===== ROLE SELECT MENUS =====
+    // ===== ROLE SELECT MENUS - FIXED =====
     if (interaction.isRoleSelectMenu()) {
+        await interaction.deferUpdate();
+        
         const handlers = {
-            'mm_set_staff': () => {
+            'mm_set_staff': async () => {
                 const current = getServerConfig(guildId);
                 const roles = current.staffRoles || [];
                 if (!roles.includes(interaction.values[0])) {
                     roles.push(interaction.values[0]);
-                    updateServerConfig(guildId, { staffRoles: roles });
+                    await updateServerConfig(guildId, { staffRoles: roles });
                 }
+                const dashData = await getDashboard(guildId, 'mm_setup');
+                await interaction.editReply(dashData);
             },
-            'mm_set_dashboard': () => {
+            'mm_set_dashboard': async () => {
                 const current = getServerConfig(guildId);
                 const roles = current.dashboardRoles || [];
                 if (!roles.includes(interaction.values[0])) {
                     roles.push(interaction.values[0]);
-                    updateServerConfig(guildId, { dashboardRoles: roles });
+                    await updateServerConfig(guildId, { dashboardRoles: roles });
                 }
+                const dashData = await getDashboard(guildId, 'mm_setup');
+                await interaction.editReply(dashData);
             },
-            'mm_set_admin': () => {
+            'mm_set_admin': async () => {
                 const current = getServerConfig(guildId);
                 const roles = current.adminRoles || [];
                 if (!roles.includes(interaction.values[0])) {
                     roles.push(interaction.values[0]);
-                    updateServerConfig(guildId, { adminRoles: roles });
+                    await updateServerConfig(guildId, { adminRoles: roles });
                 }
+                const dashData = await getDashboard(guildId, 'mm_setup');
+                await interaction.editReply(dashData);
             },
-            'v_set_target': () => updateServerConfig(guildId, { targetRoleId: interaction.values[0] }),
-            'v_set_giver': () => updateServerConfig(guildId, { giverRoleId: interaction.values[0] }),
-            'scam_set_role': () => updateServerConfig(guildId, { scamAlertRoleId: interaction.values[0] })
+            'v_set_target': async () => {
+                await updateServerConfig(guildId, { targetRoleId: interaction.values[0] });
+                const dashData = await getDashboard(guildId, 'vouch_setup');
+                await interaction.editReply(dashData);
+            },
+            'v_set_giver': async () => {
+                await updateServerConfig(guildId, { giverRoleId: interaction.values[0] });
+                const dashData = await getDashboard(guildId, 'vouch_setup');
+                await interaction.editReply(dashData);
+            },
+            'scam_set_role': async () => {
+                await updateServerConfig(guildId, { scamAlertRoleId: interaction.values[0] });
+                const dashData = await getDashboard(guildId, 'scam_setup');
+                await interaction.editReply(dashData);
+            }
         };
 
         const handler = handlers[interaction.customId];
         if (handler) {
             await handler();
-            const page = interaction.customId.startsWith('mm_') ? 'mm_setup' : 
-                        interaction.customId.startsWith('v_') ? 'vouch_setup' : 'scam_setup';
-            const dashData = await getDashboard(guildId, page);
-            return interaction.update(dashData);
         }
+        return;
     }
 
-    // ===== CHANNEL SELECT MENUS =====
+    // ===== CHANNEL SELECT MENUS - FIXED =====
     if (interaction.isChannelSelectMenu()) {
+        await interaction.deferUpdate();
+        
         const handlers = {
-            'mm_set_category': () => updateServerConfig(guildId, { ticketCategoryId: interaction.values[0] }),
-            'mm_set_logs': () => updateServerConfig(guildId, { logChannelId: interaction.values[0] }),
-            'v_set_chan': () => updateServerConfig(guildId, { vouchChannelId: interaction.values[0] }),
-            'scam_set_log': () => updateServerConfig(guildId, { scamAlertLogChannel: interaction.values[0] })
+            'mm_set_category': async () => {
+                await updateServerConfig(guildId, { ticketCategoryId: interaction.values[0] });
+                const dashData = await getDashboard(guildId, 'mm_setup');
+                await interaction.editReply(dashData);
+            },
+            'mm_set_logs': async () => {
+                await updateServerConfig(guildId, { logChannelId: interaction.values[0] });
+                const dashData = await getDashboard(guildId, 'mm_setup');
+                await interaction.editReply(dashData);
+            },
+            'v_set_chan': async () => {
+                await updateServerConfig(guildId, { vouchChannelId: interaction.values[0] });
+                const dashData = await getDashboard(guildId, 'vouch_setup');
+                await interaction.editReply(dashData);
+            },
+            'scam_set_log': async () => {
+                await updateServerConfig(guildId, { scamAlertLogChannel: interaction.values[0] });
+                const dashData = await getDashboard(guildId, 'scam_setup');
+                await interaction.editReply(dashData);
+            }
         };
 
         const handler = handlers[interaction.customId];
         if (handler) {
             await handler();
-            const page = interaction.customId.startsWith('mm_') ? 'mm_setup' : 
-                        interaction.customId.startsWith('v_') ? 'vouch_setup' : 'scam_setup';
-            const dashData = await getDashboard(guildId, page);
-            return interaction.update(dashData);
         }
+        return;
     }
 
     // ===== BUTTONS =====
@@ -1847,23 +1898,26 @@ client.on('interactionCreate', async (interaction) => {
 
     // Clear Staff Roles
     if (interaction.customId === 'clear_staff_roles') {
+        await interaction.deferUpdate();
         await updateServerConfig(guildId, { staffRoles: [] });
         const dashData = await getDashboard(guildId, 'mm_setup');
-        return interaction.update(dashData);
+        return interaction.editReply(dashData);
     }
 
     // Clear Dashboard Roles
     if (interaction.customId === 'clear_dashboard_roles') {
+        await interaction.deferUpdate();
         await updateServerConfig(guildId, { dashboardRoles: [] });
         const dashData = await getDashboard(guildId, 'mm_setup');
-        return interaction.update(dashData);
+        return interaction.editReply(dashData);
     }
 
     // Clear Admin Roles
     if (interaction.customId === 'clear_admin_roles') {
+        await interaction.deferUpdate();
         await updateServerConfig(guildId, { adminRoles: [] });
         const dashData = await getDashboard(guildId, 'mm_setup');
-        return interaction.update(dashData);
+        return interaction.editReply(dashData);
     }
 
     // AFK DM
@@ -1918,6 +1972,7 @@ client.on('interactionCreate', async (interaction) => {
 
     // Vouch Confirm
     if (interaction.customId === 'vouch_confirm') {
+        await interaction.deferUpdate();
         const embed = EmbedBuilder.from(interaction.message.embeds[0])
             .setColor('#2ECC71')
             .addFields(
@@ -1925,7 +1980,7 @@ client.on('interactionCreate', async (interaction) => {
                 { name: '🔒 Trust Score', value: '100%', inline: true }
             );
         
-        await interaction.update({ embeds: [embed], components: [] });
+        await interaction.editReply({ embeds: [embed], components: [] });
         await interaction.followUp({
             content: '✅ **Vouch confirmed and verified!**',
             ephemeral: true
