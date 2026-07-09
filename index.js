@@ -20,21 +20,18 @@ require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
 
-// ===================== CHECK TOKEN =====================
 const BOT_TOKEN = process.env.DISCORD_TOKEN;
 if (!BOT_TOKEN) {
     console.error('❌ DISCORD_TOKEN is missing!');
     process.exit(1);
 }
 
-// ===================== FILE-BASED STORAGE =====================
 const CONFIG_FILE = path.join(__dirname, 'config.json');
 
 function loadConfig() {
     try {
         if (fs.existsSync(CONFIG_FILE)) {
-            const data = fs.readFileSync(CONFIG_FILE, 'utf8');
-            return JSON.parse(data);
+            return JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
         }
     } catch (error) {
         console.error('Error loading config:', error);
@@ -109,7 +106,6 @@ async function updateServerConfig(guildId, updates) {
     return allConfigs[guildId];
 }
 
-// ===================== CLIENT INIT =====================
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
@@ -119,7 +115,6 @@ const client = new Client({
     ]
 });
 
-// ===================== HELPERS =====================
 function parseTime(str) {
     if (!str) return null;
     const match = str.match(/^(\d+)(s|m|h|d)$/);
@@ -167,7 +162,6 @@ function hasAdminRole(member, conf) {
     return conf.adminRoles.some(roleId => member.roles.cache.has(roleId));
 }
 
-// ===================== STATE MANAGEMENT =====================
 const activeTrades = new Map();
 const activeVouchTimers = new Map();
 const afkUsers = new Map();
@@ -186,7 +180,6 @@ const FAUX_TRADES = [
     "STEAM: 50$ GIFT CARD FOR 40$ CRYPTO"
 ];
 
-// ===================== ANTI-NUKE =====================
 async function triggerAntiNuke(guild, executorId, actionType, targetId) {
     if (executorId === guild.ownerId || executorId === client.user.id) return false;
     
@@ -227,7 +220,6 @@ async function triggerAntiNuke(guild, executorId, actionType, targetId) {
     return true;
 }
 
-// ===================== AUTO-VOUCH =====================
 async function generateFakeVouch(guildId) {
     const guild = client.guilds.cache.get(guildId);
     if (!guild) return;
@@ -317,7 +309,6 @@ function stopVouchLoop(guildId) {
     }
 }
 
-// ===================== SCAM ALERT SYSTEM =====================
 async function sendScamAlert(guild, staffMember, victim, reason) {
     const conf = getServerConfig(guild.id);
     
@@ -414,7 +405,6 @@ async function sendScamAlert(guild, staffMember, victim, reason) {
     };
 }
 
-// ===================== DASHBOARD =====================
 async function getDashboard(guildId, pageName) {
     const conf = getServerConfig(guildId);
     const embed = new EmbedBuilder().setColor('#2B2D31');
@@ -605,13 +595,6 @@ async function getDashboard(guildId, pageName) {
             embed.setTitle('📜 Command Directory')
                 .setDescription(
                     `**Prefix:** \`${conf.prefix}\`\n\n` +
-                    `**🛡️ Moderation**\n` +
-                    `> \`${conf.prefix}ban @user\` - Ban a member\n` +
-                    `> \`${conf.prefix}unban <id>\` - Unban by ID\n` +
-                    `> \`${conf.prefix}kick @user\` - Kick a member\n` +
-                    `> \`${conf.prefix}mute @user <time>\` - Timeout\n` +
-                    `> \`${conf.prefix}purge <amount>\` - Clear messages\n` +
-                    `> \`${conf.prefix}fban @user\` - Fake ban\n\n` +
                     `**🤝 Tickets**\n` +
                     `> \`${conf.prefix}setup-ticket\` - Create ticket button\n` +
                     `> \`${conf.prefix}close\` - Close current ticket\n` +
@@ -622,9 +605,8 @@ async function getDashboard(guildId, pageName) {
                     `> \`${conf.prefix}vouch stop\` - Stop auto-vouch\n` +
                     `> \`${conf.prefix}vouch status\` - Check vouch status\n\n` +
                     `**⚙️ Configuration**\n` +
-                    `> \`${conf.prefix}whitelist @user\` - Manage permissions\n` +
-                    `> \`${conf.prefix}afk\` - Toggle AFK mode\n` +
-                    `> \`${conf.prefix}help\` - Show middleman guide`
+                    `> \`${conf.prefix}dashboard\` - Open control panel\n` +
+                    `> \`${conf.prefix}afk\` - Toggle AFK mode`
                 );
             components = [navRow];
             break;
@@ -633,36 +615,9 @@ async function getDashboard(guildId, pageName) {
     return { embeds: [embed], components };
 }
 
-async function sendHelpMessage(message) {
-    const embed = new EmbedBuilder()
-        .setColor('#5865F2')
-        .setTitle('🤝 Middleman System Guide')
-        .setDescription('Here\'s how the middleman system works:')
-        .addFields(
-            { name: '📋 Step 1: Open a Ticket', value: 'Click the **"Request Middleman"** button or use `!setup-ticket` to create a ticket channel.', inline: false },
-            { name: '👤 Step 2: Add Trading Partner', value: 'In your ticket, send the **username** or **ID** of the person you\'re trading with.', inline: false },
-            { name: '📝 Step 3: Provide Deal Details', value: 'Type the details of your trade (e.g., "Giving 5000 Robux for $20 PayPal").', inline: false },
-            { name: '🤝 Step 4: Partner Confirms', value: 'Your trading partner will **confirm** the deal details.', inline: false },
-            { name: '🛡️ Step 5: Middleman Takes Over', value: 'A staff member will **claim** the ticket and assist with the trade.', inline: false },
-            { name: '🔒 Step 6: Complete Trade', value: 'The middleman will ensure both parties complete their part of the trade safely.', inline: false }
-        )
-        .addFields(
-            { name: '💡 How It Works', value: '**User 1** gives item to **Middleman** → **Middleman** verifies → **User 2** sends payment → **Middleman** gives item to **User 2**', inline: false }
-        )
-        .addFields(
-            { name: '📌 Ticket Commands', value: '`!close` - Close ticket (Staff only)\n`!add @user` - Add user to ticket (Staff only)', inline: false }
-        )
-        .setFooter({ text: 'Cosmic™ Middleman System • Safe & Secure Trades' })
-        .setTimestamp();
-
-    await message.reply({ embeds: [embed] });
-}
-
-// ===================== BOT EVENTS =====================
 client.once('ready', async () => {
     console.log(`✅ ${client.user.tag} is online!`);
     console.log(`📊 Serving ${client.guilds.cache.size} servers`);
-    console.log(`💾 Using file-based storage (no database needed!)`);
     
     for (const [guildId] of client.guilds.cache) {
         try {
@@ -693,7 +648,6 @@ client.on('guildAuditLogEntryCreate', async (auditLog, guild) => {
     }
 });
 
-// ===================== MESSAGE HANDLER =====================
 client.on('messageCreate', async (message) => {
     if (message.author.bot || !message.guild) return;
     
@@ -701,16 +655,9 @@ client.on('messageCreate', async (message) => {
     const conf = getServerConfig(guildId);
     const prefix = conf.prefix;
 
-    // Bot ping - shows help, not dashboard
+    // Bot ping - DO NOTHING
     if (message.content === `<@${client.user.id}>`) {
-        return message.reply({
-            embeds: [new EmbedBuilder()
-                .setColor('#5865F2')
-                .setTitle('👋 Hey there!')
-                .setDescription(`Use \`${prefix}help\` to see available commands or \`${prefix}dashboard\` for the control panel.`)
-                .setFooter({ text: 'Cosmic™ Bot' })
-            ]
-        });
+        return; // Do absolutely nothing
     }
 
     // AFK System
@@ -733,13 +680,7 @@ client.on('messageCreate', async (message) => {
         }
     });
 
-    // Help command
-    if (message.content === `${prefix}help` || message.content === `${prefix}help middleman`) {
-        await sendHelpMessage(message);
-        return;
-    }
-
-    // Ticket System - channel logic
+    // Ticket System
     if (message.channel.name.startsWith('mm-')) {
         let tradeState = activeTrades.get(message.channel.id);
         if (!tradeState) {
@@ -1043,93 +984,6 @@ client.on('messageCreate', async (message) => {
         return;
     }
 
-    // Whitelist
-    if (command === 'whitelist' && (isAdmin || message.author.id === message.guild.ownerId)) {
-        const target = message.mentions.members.first();
-        if (!target) {
-            return message.reply({
-                embeds: [new EmbedBuilder()
-                    .setColor('#ED4245')
-                    .setDescription(`❌ Please mention a user: \`${prefix}whitelist @user\``)
-                ]
-            });
-        }
-
-        if (target.id === message.author.id && message.author.id !== message.guild.ownerId) {
-            return message.reply({
-                embeds: [new EmbedBuilder()
-                    .setColor('#ED4245')
-                    .setDescription('❌ You cannot edit your own whitelist.')
-                ]
-            });
-        }
-
-        const userWhitelist = conf.whitelists[target.id] || [];
-        const allPerms = ['anti_ban', 'anti_kick', 'anti_channel_delete', 'anti_role_delete'];
-        
-        const allowed = userWhitelist.length > 0 ? 
-            userWhitelist.map(p => `✅ \`${p}\``).join('\n') : '❌ None';
-        const denied = allPerms.filter(p => !userWhitelist.includes(p)).map(p => `❌ \`${p}\``).join('\n') || '✅ None';
-
-        const embed = new EmbedBuilder()
-            .setColor('#2B2D31')
-            .setTitle('🛡️ Anti-Nuke Configuration')
-            .setDescription(`Managing permissions for ${target}\n*Unauthorized actions will result in an immediate ban.*`)
-            .addFields(
-                { name: '🟢 Allowed Actions', value: allowed, inline: true },
-                { name: '🔴 Blocked Actions', value: denied, inline: true }
-            );
-
-        const menu = new StringSelectMenuBuilder()
-            .setCustomId(`wl_menu_${target.id}`)
-            .setPlaceholder('Select Allowed Permissions')
-            .setMinValues(0)
-            .setMaxValues(4)
-            .addOptions([
-                { label: 'Anti Ban', value: 'anti_ban', description: 'Can ban members', default: userWhitelist.includes('anti_ban') },
-                { label: 'Anti Kick', value: 'anti_kick', description: 'Can kick members', default: userWhitelist.includes('anti_kick') },
-                { label: 'Anti Channel Delete', value: 'anti_channel_delete', description: 'Can delete channels', default: userWhitelist.includes('anti_channel_delete') },
-                { label: 'Anti Role Delete', value: 'anti_role_delete', description: 'Can delete roles', default: userWhitelist.includes('anti_role_delete') }
-            ]);
-
-        await message.reply({ 
-            embeds: [embed], 
-            components: [new ActionRowBuilder().addComponents(menu)] 
-        });
-        return;
-    }
-
-    // Unban
-    if (command === 'unban' && message.member.permissions.has(PermissionFlagsBits.BanMembers)) {
-        const targetId = args[0];
-        if (!targetId) {
-            return message.reply({
-                embeds: [new EmbedBuilder()
-                    .setColor('#ED4245')
-                    .setDescription(`❌ Please provide a User ID: \`${prefix}unban <id>\``)
-                ]
-            });
-        }
-
-        try {
-            const user = await message.guild.members.unban(targetId, `Unbanned by ${message.author.tag}`);
-            await message.reply({
-                embeds: [new EmbedBuilder()
-                    .setColor('#2ECC71')
-                    .setDescription(`✅ **${user.username}** has been unbanned. Welcome back!`)
-                ]
-            });
-        } catch (error) {
-            await message.reply({
-                embeds: [new EmbedBuilder()
-                    .setColor('#ED4245')
-                    .setDescription('❌ Could not unban. Invalid ID or user is not banned.')
-                ]
-            });
-        }
-        return;
-    }
-
     // AFK
     if (command === 'afk') {
         const embed = new EmbedBuilder()
@@ -1150,169 +1004,6 @@ client.on('messageCreate', async (message) => {
         );
 
         await message.reply({ embeds: [embed], components: [row] });
-        return;
-    }
-
-    // Purge
-    if (command === 'purge' && message.member.permissions.has(PermissionFlagsBits.ManageMessages)) {
-        const num = parseInt(args[0]);
-        if (isNaN(num) || num < 1 || num > 99) {
-            return message.reply({
-                embeds: [new EmbedBuilder()
-                    .setColor('#ED4245')
-                    .setDescription('❌ Please provide a number between 1 and 99.')
-                ]
-            });
-        }
-
-        try {
-            const deleted = await message.channel.bulkDelete(num + 1);
-            const reply = await message.channel.send({
-                embeds: [new EmbedBuilder()
-                    .setColor('#2ECC71')
-                    .setDescription(`🧹 **Cleared ${deleted.size - 1} messages.**`)
-                ]
-            });
-            setTimeout(() => reply.delete().catch(() => {}), 3000);
-        } catch (error) {
-            await message.reply({
-                embeds: [new EmbedBuilder()
-                    .setColor('#ED4245')
-                    .setDescription('❌ Cannot delete messages older than 14 days.')
-                ]
-            });
-        }
-        return;
-    }
-
-    // Mute
-    if (command === 'mute' && message.member.permissions.has(PermissionFlagsBits.ModerateMembers)) {
-        const target = message.mentions.members.first();
-        if (!target || !args[1]) {
-            return message.reply({
-                embeds: [new EmbedBuilder()
-                    .setColor('#ED4245')
-                    .setDescription(`❌ **Usage:** \`${prefix}mute @user 10m\``)
-                ]
-            });
-        }
-
-        const msTime = parseTime(args[1]);
-        if (!msTime) {
-            return message.reply({
-                embeds: [new EmbedBuilder()
-                    .setColor('#ED4245')
-                    .setDescription('❌ Invalid time format. Use s, m, h, or d (e.g., 10m, 1h, 30s)')
-                ]
-            });
-        }
-
-        try {
-            await target.timeout(msTime, `Muted by ${message.author.tag}`);
-            await message.reply({
-                embeds: [new EmbedBuilder()
-                    .setColor('#FEE75C')
-                    .setDescription(`🔇 **${target.user.username}** has been timed out for **${args[1]}**.`)
-                ]
-            });
-        } catch (error) {
-            await message.reply({
-                embeds: [new EmbedBuilder()
-                    .setColor('#ED4245')
-                    .setDescription('❌ Missing permissions or user is too powerful.')
-                ]
-            });
-        }
-        return;
-    }
-
-    // Kick
-    if (command === 'kick' && message.member.permissions.has(PermissionFlagsBits.KickMembers)) {
-        const target = message.mentions.members.first();
-        if (!target) {
-            return message.reply({
-                embeds: [new EmbedBuilder()
-                    .setColor('#ED4245')
-                    .setDescription('❌ Mention a user to kick.')
-                ]
-            });
-        }
-
-        const isBlocked = await triggerAntiNuke(message.guild, message.author.id, 'anti_kick', target.id);
-        if (isBlocked) return;
-
-        try {
-            await target.kick(`Kicked by ${message.author.tag}`);
-            await message.reply({
-                embeds: [new EmbedBuilder()
-                    .setColor('#E67E22')
-                    .setDescription(`👢 **${target.user.username}** has been kicked.`)
-                ]
-            });
-        } catch (error) {
-            await message.reply({
-                embeds: [new EmbedBuilder()
-                    .setColor('#ED4245')
-                    .setDescription('❌ Missing permissions to kick this user.')
-                ]
-            });
-        }
-        return;
-    }
-
-    // Ban
-    if (command === 'ban' && message.member.permissions.has(PermissionFlagsBits.BanMembers)) {
-        const target = message.mentions.members.first();
-        if (!target) {
-            return message.reply({
-                embeds: [new EmbedBuilder()
-                    .setColor('#ED4245')
-                    .setDescription('❌ Mention a user to ban.')
-                ]
-            });
-        }
-
-        const isBlocked = await triggerAntiNuke(message.guild, message.author.id, 'anti_ban', target.id);
-        if (isBlocked) return;
-
-        try {
-            await target.ban({ reason: `Banned by ${message.author.tag}` });
-            await message.reply({
-                embeds: [new EmbedBuilder()
-                    .setColor('#ED4245')
-                    .setDescription(`🔨 **${target.user.username}** has been banned.`)
-                ]
-            });
-        } catch (error) {
-            await message.reply({
-                embeds: [new EmbedBuilder()
-                    .setColor('#ED4245')
-                    .setDescription('❌ Missing permissions to ban this user.')
-                ]
-            });
-        }
-        return;
-    }
-
-    // FBan
-    if (command === 'fban' && isAdmin) {
-        const target = message.mentions.members.first();
-        if (!target) {
-            return message.reply({
-                embeds: [new EmbedBuilder()
-                    .setColor('#ED4245')
-                    .setDescription('❌ Mention a user to fake ban.')
-                ]
-            });
-        }
-
-        await message.channel.send({
-            embeds: [new EmbedBuilder()
-                .setColor('#ED4245')
-                .setDescription(`🔨 **${target.user.username}** has been permanently banned from the server.`)
-            ]
-        });
-        await message.delete().catch(() => {});
         return;
     }
 
@@ -1432,7 +1123,7 @@ client.on('interactionCreate', async (interaction) => {
                     const embed = new EmbedBuilder()
                         .setColor('#2ECC71')
                         .setTitle('🤝 Welcome to the Trusted Community!')
-                        .setDescription(conf.scamAlertJoinMessage || '✅ You chose to join us! Welcome!')
+                        .setDescription(conf.scamAlertJoinMessage)
                         .addFields(
                             { name: 'Role Added', value: `${role}`, inline: true },
                             { name: 'Decision', value: '✅ Joined', inline: true }
@@ -1466,7 +1157,7 @@ client.on('interactionCreate', async (interaction) => {
                             embeds: [new EmbedBuilder()
                                 .setColor('#2ECC71')
                                 .setTitle('🤝 Welcome to the Trusted Community!')
-                                .setDescription('You made the right choice! Enjoy your stay and stay safe! 🛡️')
+                                .setDescription('You made the right choice! Enjoy your stay! 🛡️')
                             ]
                         });
                     } catch (e) {}
@@ -1495,7 +1186,7 @@ client.on('interactionCreate', async (interaction) => {
                 const embed = new EmbedBuilder()
                     .setColor('#ED4245')
                     .setTitle('🚪 Goodbye')
-                    .setDescription(conf.scamAlertLeaveMessage || '❌ You chose to leave. Goodbye!')
+                    .setDescription(conf.scamAlertLeaveMessage)
                     .addFields(
                         { name: 'Decision', value: '❌ Left', inline: true }
                     )
@@ -1693,7 +1384,7 @@ client.on('interactionCreate', async (interaction) => {
         }
     }
 
-    // ===== ROLE SELECT MENUS =====
+    // ===== ROLE SELECT MENUS - FIXED =====
     if (interaction.isRoleSelectMenu()) {
         await interaction.deferUpdate();
         
@@ -1752,7 +1443,7 @@ client.on('interactionCreate', async (interaction) => {
         return;
     }
 
-    // ===== CHANNEL SELECT MENUS =====
+    // ===== CHANNEL SELECT MENUS - FIXED =====
     if (interaction.isChannelSelectMenu()) {
         await interaction.deferUpdate();
         
@@ -1842,8 +1533,7 @@ client.on('interactionCreate', async (interaction) => {
                         .setLabel('Alert Message')
                         .setStyle(TextInputStyle.Paragraph)
                         .setRequired(true)
-                        .setPlaceholder('Enter the scam alert message...')
-                        .setValue(conf.scamAlertMessage || '⚠️ SCAM ALERT!...')
+                        .setValue(conf.scamAlertMessage)
                 ),
                 new ActionRowBuilder().addComponents(
                     new TextInputBuilder()
@@ -1851,8 +1541,7 @@ client.on('interactionCreate', async (interaction) => {
                         .setLabel('Join Message')
                         .setStyle(TextInputStyle.Paragraph)
                         .setRequired(true)
-                        .setPlaceholder('Message when user joins...')
-                        .setValue(conf.scamAlertJoinMessage || '✅ You chose to join us!...')
+                        .setValue(conf.scamAlertJoinMessage)
                 ),
                 new ActionRowBuilder().addComponents(
                     new TextInputBuilder()
@@ -1860,8 +1549,7 @@ client.on('interactionCreate', async (interaction) => {
                         .setLabel('Leave Message')
                         .setStyle(TextInputStyle.Paragraph)
                         .setRequired(true)
-                        .setPlaceholder('Message when user leaves...')
-                        .setValue(conf.scamAlertLeaveMessage || '❌ You chose to leave...')
+                        .setValue(conf.scamAlertLeaveMessage)
                 )
             );
         return interaction.showModal(modal);
@@ -2262,12 +1950,9 @@ client.on('interactionCreate', async (interaction) => {
     }
 });
 
-// ===================== ERROR HANDLING =====================
 process.on('unhandledRejection', error => {
     console.error('❌ Unhandled Rejection:', error);
 });
 
-// ===================== START BOT =====================
 console.log('🔄 Attempting to connect to Discord...');
-console.log('📝 Token length:', BOT_TOKEN.length);
 client.login(BOT_TOKEN);
