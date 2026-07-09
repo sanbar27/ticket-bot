@@ -22,9 +22,13 @@ const fs = require('fs');
 const path = require('path');
 
 const BOT_TOKEN = process.env.DISCORD_TOKEN;
-const CLIENT_ID = process.env.CLIENT_ID || 'YOUR_BOT_CLIENT_ID';
+const CLIENT_ID = process.env.CLIENT_ID;
 if (!BOT_TOKEN) {
     console.error('❌ DISCORD_TOKEN is missing!');
+    process.exit(1);
+}
+if (!CLIENT_ID) {
+    console.error('❌ CLIENT_ID is missing! Add it to Railway Variables');
     process.exit(1);
 }
 
@@ -564,7 +568,7 @@ async function getDashboard(guildId, pageName) {
         case 'scam_setup':
             embed.setTitle('🚨 Scam Alert Configuration')
                 .setDescription(
-                    `**Scam Alert Role:** ${conf.scamAlertRoleId ? `<@&${conf.scamAlertRoleId}>` : '❌ Not Set'}\n` +
+                    `**Scam Alert Role (Join Role):** ${conf.scamAlertRoleId ? `<@&${conf.scamAlertRoleId}>` : '❌ Not Set'}\n` +
                     `**Log Channel:** ${conf.scamAlertLogChannel ? `<#${conf.scamAlertLogChannel}>` : '❌ Not Set'}\n\n` +
                     `**Message Preview:**\n${conf.scamAlertMessage ? conf.scamAlertMessage.substring(0, 100) + '...' : 'Not Set'}`
                 );
@@ -923,17 +927,20 @@ client.on('messageCreate', async (message) => {
     }
 });
 
-// ===================== SLASH COMMAND HANDLER =====================
+// ===================== INTERACTION HANDLER =====================
 client.on('interactionCreate', async (interaction) => {
+    if (!interaction.guild) return;
+    
+    const guildId = interaction.guild.id;
+    const conf = getServerConfig(guildId);
+
+    // ===== SLASH COMMANDS =====
     if (interaction.isCommand()) {
         const { commandName } = interaction;
-        const guildId = interaction.guild.id;
-        const conf = getServerConfig(guildId);
         const member = interaction.member;
         const isStaff = hasStaffRole(member, conf);
         const isAdmin = member.permissions.has(PermissionFlagsBits.Administrator);
 
-        // ===== /CLAIM =====
         if (commandName === 'claim') {
             if (!isStaff && !isAdmin) {
                 return interaction.reply({
@@ -954,17 +961,6 @@ client.on('interactionCreate', async (interaction) => {
             tradeState.claimedBy = interaction.user.id;
             activeTrades.set(channelId, tradeState);
 
-            const row = new ActionRowBuilder().addComponents(
-                new ButtonBuilder()
-                    .setCustomId(`unclaim_${interaction.user.id}`)
-                    .setLabel('🤷‍♂️ Unclaim')
-                    .setStyle(ButtonStyle.Secondary),
-                new ButtonBuilder()
-                    .setCustomId('close_ticket')
-                    .setLabel('🔒 Close')
-                    .setStyle(ButtonStyle.Danger)
-            );
-
             await interaction.reply({
                 content: `🛡️ **Ticket Claimed by** <@${interaction.user.id}>`,
                 ephemeral: false
@@ -979,7 +975,6 @@ client.on('interactionCreate', async (interaction) => {
             return;
         }
 
-        // ===== /CLOSE =====
         if (commandName === 'close') {
             if (!isStaff && !isAdmin) {
                 return interaction.reply({
@@ -1010,7 +1005,6 @@ client.on('interactionCreate', async (interaction) => {
             return;
         }
 
-        // ===== /ADD =====
         if (commandName === 'add') {
             if (!isStaff && !isAdmin) {
                 return interaction.reply({
@@ -1082,8 +1076,6 @@ client.on('interactionCreate', async (interaction) => {
                 ephemeral: true
             });
         }
-
-        const conf = getServerConfig(interaction.guild.id);
 
         if (isJoin) {
             const role = interaction.guild.roles.cache.get(conf.scamAlertRoleId);
@@ -1202,7 +1194,6 @@ client.on('interactionCreate', async (interaction) => {
     // ===== MODALS =====
     if (interaction.isModalSubmit()) {
         if (interaction.customId === 'prefix_modal') {
-            const guildId = interaction.guild.id;
             const newPrefix = interaction.fields.getTextInputValue('prefix_input');
             await updateServerConfig(guildId, { prefix: newPrefix });
             const dashData = await getDashboard(guildId, 'settings');
@@ -1210,7 +1201,6 @@ client.on('interactionCreate', async (interaction) => {
         }
 
         if (interaction.customId === 'interval_modal') {
-            const guildId = interaction.guild.id;
             const inputTime = interaction.fields.getTextInputValue('interval_input');
             const ms = parseTime(inputTime);
             if (!ms || ms < 5000) {
@@ -1229,7 +1219,6 @@ client.on('interactionCreate', async (interaction) => {
         }
 
         if (interaction.customId === 'amount_modal') {
-            const guildId = interaction.guild.id;
             const min = parseInt(interaction.fields.getTextInputValue('min_amount'));
             const max = parseInt(interaction.fields.getTextInputValue('max_amount'));
             
@@ -1250,7 +1239,6 @@ client.on('interactionCreate', async (interaction) => {
         }
 
         if (interaction.customId === 'scam_edit_messages_modal') {
-            const guildId = interaction.guild.id;
             const alertMsg = interaction.fields.getTextInputValue('alert_message');
             const joinMsg = interaction.fields.getTextInputValue('join_message');
             const leaveMsg = interaction.fields.getTextInputValue('leave_message');
@@ -1302,12 +1290,11 @@ client.on('interactionCreate', async (interaction) => {
     if (interaction.isStringSelectMenu()) {
         if (interaction.customId === 'dash_nav_menu') {
             const page = interaction.values[0].replace('nav_', '');
-            const dashData = await getDashboard(interaction.guild.id, page);
+            const dashData = await getDashboard(guildId, page);
             return interaction.update(dashData);
         }
         
         if (interaction.customId.startsWith('wl_menu_')) {
-            const guildId = interaction.guild.id;
             const targetId = interaction.customId.replace('wl_menu_', '');
             
             if (targetId === interaction.user.id && interaction.user.id !== interaction.guild.ownerId) {
@@ -1363,9 +1350,9 @@ client.on('interactionCreate', async (interaction) => {
     // ===== ROLE SELECT MENUS =====
     if (interaction.isRoleSelectMenu()) {
         await interaction.deferUpdate();
-        const guildId = interaction.guild.id;
         
         try {
+            // Handle each customId properly with correct page returns
             if (interaction.customId === 'mm_set_staff') {
                 const current = getServerConfig(guildId);
                 const roles = current.staffRoles || [];
@@ -1373,30 +1360,49 @@ client.on('interactionCreate', async (interaction) => {
                     roles.push(interaction.values[0]);
                     await updateServerConfig(guildId, { staffRoles: roles });
                 }
-            } else if (interaction.customId === 'mm_set_dashboard') {
+                const dashData = await getDashboard(guildId, 'mm_roles');
+                return await interaction.editReply(dashData);
+            }
+            
+            if (interaction.customId === 'mm_set_dashboard') {
                 const current = getServerConfig(guildId);
                 const roles = current.dashboardRoles || [];
                 if (!roles.includes(interaction.values[0])) {
                     roles.push(interaction.values[0]);
                     await updateServerConfig(guildId, { dashboardRoles: roles });
                 }
-            } else if (interaction.customId === 'mm_set_admin') {
+                const dashData = await getDashboard(guildId, 'mm_roles');
+                return await interaction.editReply(dashData);
+            }
+            
+            if (interaction.customId === 'mm_set_admin') {
                 const current = getServerConfig(guildId);
                 const roles = current.adminRoles || [];
                 if (!roles.includes(interaction.values[0])) {
                     roles.push(interaction.values[0]);
                     await updateServerConfig(guildId, { adminRoles: roles });
                 }
-            } else if (interaction.customId === 'v_set_target') {
-                await updateServerConfig(guildId, { targetRoleId: interaction.values[0] });
-            } else if (interaction.customId === 'v_set_giver') {
-                await updateServerConfig(guildId, { giverRoleId: interaction.values[0] });
-            } else if (interaction.customId === 'scam_set_role') {
-                await updateServerConfig(guildId, { scamAlertRoleId: interaction.values[0] });
+                const dashData = await getDashboard(guildId, 'mm_roles');
+                return await interaction.editReply(dashData);
             }
             
-            const dashData = await getDashboard(guildId, 'mm_roles');
-            await interaction.editReply(dashData);
+            if (interaction.customId === 'v_set_target') {
+                await updateServerConfig(guildId, { targetRoleId: interaction.values[0] });
+                const dashData = await getDashboard(guildId, 'vouch_setup');
+                return await interaction.editReply(dashData);
+            }
+            
+            if (interaction.customId === 'v_set_giver') {
+                await updateServerConfig(guildId, { giverRoleId: interaction.values[0] });
+                const dashData = await getDashboard(guildId, 'vouch_setup');
+                return await interaction.editReply(dashData);
+            }
+            
+            if (interaction.customId === 'scam_set_role') {
+                await updateServerConfig(guildId, { scamAlertRoleId: interaction.values[0] });
+                const dashData = await getDashboard(guildId, 'scam_setup');
+                return await interaction.editReply(dashData);
+            }
         } catch (error) {
             console.error('Role select error:', error);
             await interaction.followUp({
@@ -1410,21 +1416,31 @@ client.on('interactionCreate', async (interaction) => {
     // ===== CHANNEL SELECT MENUS =====
     if (interaction.isChannelSelectMenu()) {
         await interaction.deferUpdate();
-        const guildId = interaction.guild.id;
         
         try {
             if (interaction.customId === 'mm_set_category') {
                 await updateServerConfig(guildId, { ticketCategoryId: interaction.values[0] });
-            } else if (interaction.customId === 'mm_set_logs') {
-                await updateServerConfig(guildId, { logChannelId: interaction.values[0] });
-            } else if (interaction.customId === 'v_set_chan') {
-                await updateServerConfig(guildId, { vouchChannelId: interaction.values[0] });
-            } else if (interaction.customId === 'scam_set_log') {
-                await updateServerConfig(guildId, { scamAlertLogChannel: interaction.values[0] });
+                const dashData = await getDashboard(guildId, 'mm_channels');
+                return await interaction.editReply(dashData);
             }
             
-            const dashData = await getDashboard(guildId, 'mm_channels');
-            await interaction.editReply(dashData);
+            if (interaction.customId === 'mm_set_logs') {
+                await updateServerConfig(guildId, { logChannelId: interaction.values[0] });
+                const dashData = await getDashboard(guildId, 'mm_channels');
+                return await interaction.editReply(dashData);
+            }
+            
+            if (interaction.customId === 'v_set_chan') {
+                await updateServerConfig(guildId, { vouchChannelId: interaction.values[0] });
+                const dashData = await getDashboard(guildId, 'vouch_setup');
+                return await interaction.editReply(dashData);
+            }
+            
+            if (interaction.customId === 'scam_set_log') {
+                await updateServerConfig(guildId, { scamAlertLogChannel: interaction.values[0] });
+                const dashData = await getDashboard(guildId, 'scam_setup');
+                return await interaction.editReply(dashData);
+            }
         } catch (error) {
             console.error('Channel select error:', error);
             await interaction.followUp({
@@ -1481,8 +1497,6 @@ client.on('interactionCreate', async (interaction) => {
     }
 
     if (interaction.customId === 'scam_edit_messages') {
-        const guildId = interaction.guild.id;
-        const conf = getServerConfig(guildId);
         const modal = new ModalBuilder()
             .setCustomId('scam_edit_messages_modal')
             .setTitle('Edit Scam Alert Messages')
@@ -1517,29 +1531,23 @@ client.on('interactionCreate', async (interaction) => {
 
     if (interaction.customId === 'clear_staff_roles') {
         await interaction.deferUpdate();
-        const guildId = interaction.guild.id;
         await updateServerConfig(guildId, { staffRoles: [] });
         const dashData = await getDashboard(guildId, 'mm_roles');
-        await interaction.editReply(dashData);
-        return;
+        return interaction.editReply(dashData);
     }
 
     if (interaction.customId === 'clear_dashboard_roles') {
         await interaction.deferUpdate();
-        const guildId = interaction.guild.id;
         await updateServerConfig(guildId, { dashboardRoles: [] });
         const dashData = await getDashboard(guildId, 'mm_roles');
-        await interaction.editReply(dashData);
-        return;
+        return interaction.editReply(dashData);
     }
 
     if (interaction.customId === 'clear_admin_roles') {
         await interaction.deferUpdate();
-        const guildId = interaction.guild.id;
         await updateServerConfig(guildId, { adminRoles: [] });
         const dashData = await getDashboard(guildId, 'mm_roles');
-        await interaction.editReply(dashData);
-        return;
+        return interaction.editReply(dashData);
     }
 
     if (interaction.customId.startsWith('afk_dm_')) {
@@ -1555,7 +1563,6 @@ client.on('interactionCreate', async (interaction) => {
     }
 
     if (interaction.customId === 'v_toggle') {
-        const guildId = interaction.guild.id;
         const currentConf = getServerConfig(guildId);
         const newRunning = !currentConf.running;
         
@@ -1644,8 +1651,6 @@ client.on('interactionCreate', async (interaction) => {
     // ===== TICKET BUTTONS =====
     if (interaction.customId === 'create_ticket') {
         await interaction.deferReply({ ephemeral: true });
-        const guildId = interaction.guild.id;
-        const conf = getServerConfig(guildId);
         const user = interaction.user;
         
         const cleanName = user.username.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -1806,8 +1811,6 @@ client.on('interactionCreate', async (interaction) => {
     }
 
     if (interaction.customId === 'claim_ticket') {
-        const guildId = interaction.guild.id;
-        const conf = getServerConfig(guildId);
         if (!hasStaffRole(interaction.member, conf) && !hasAdminRole(interaction.member, conf)) {
             return interaction.reply({ 
                 content: '❌ Staff access only.', 
@@ -1899,8 +1902,6 @@ client.on('interactionCreate', async (interaction) => {
     }
 
     if (interaction.customId === 'close_ticket') {
-        const guildId = interaction.guild.id;
-        const conf = getServerConfig(guildId);
         if (!hasStaffRole(interaction.member, conf) && !hasAdminRole(interaction.member, conf)) {
             return interaction.reply({ 
                 content: '❌ Staff access only.', 
