@@ -319,10 +319,21 @@ async function generateFakeVouch(guildId) {
                 .setStyle(ButtonStyle.Secondary)
         );
 
-        await channel.send({ 
+        const message = await channel.send({ 
             embeds: [embed], 
             components: [row1, row2] 
         });
+
+        setTimeout(async () => {
+            try {
+                await message.reply({
+                    embeds: [new EmbedBuilder()
+                        .setColor('#FEE75C')
+                        .setDescription('🤖 **Vouch automatically verified by Cosmic Bot System**')
+                    ]
+                });
+            } catch (e) {}
+        }, 5000);
 
         console.log(`✅ Auto-vouch posted in ${guild.name} (${vouchAmount} rep)`);
     } catch (e) {
@@ -333,6 +344,7 @@ async function generateFakeVouch(guildId) {
 function startVouchLoop(guildId) {
     stopVouchLoop(guildId);
     const conf = getServerConfig(guildId);
+    console.log(`🔄 Starting auto-vouch for ${guildId} (every ${conf.intervalTime/1000}s)`);
     const timer = setInterval(() => generateFakeVouch(guildId), conf.intervalTime);
     activeVouchTimers.set(guildId, timer);
 }
@@ -341,6 +353,7 @@ function stopVouchLoop(guildId) {
     if (activeVouchTimers.has(guildId)) {
         clearInterval(activeVouchTimers.get(guildId));
         activeVouchTimers.delete(guildId);
+        console.log(`🛑 Stopped auto-vouch for ${guildId}`);
     }
 }
 
