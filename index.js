@@ -67,9 +67,9 @@ function getServerConfig(guildId) {
             vouchMaxAmount: 5,
             scamAlertRoleId: null,
             scamAlertLogChannel: null,
-            scamAlertMessage: "🚨 **YOU'VE BEEN SCAMMED!**\n\nYou have been identified as a scammer. Choose your fate:\n\n🔹 **JOIN US AND BE RICH** - Prove your innocence\n🔹 **LEAVE AND BE BROKE** - Get kicked from the server\n\nMake your choice.",
-            scamAlertJoinMessage: "✅ You chose to join us! Welcome to the rich community! 💰",
-            scamAlertLeaveMessage: "❌ You chose to leave and be broke. Goodbye! 👋"
+            scamAlertMessage: "🚨 **YOU'VE BEEN SCAMMED!**\n\nYou have been identified as a scammer. Choose your fate:\n\n💰 **JOIN US AND BE RICH** - Prove your innocence\n💀 **LEAVE AND BE BROKE** - Get kicked from the server\n\nMake your choice.",
+            scamAlertJoinMessage: "💰 You chose to join us! Welcome to the rich community! 🤑",
+            scamAlertLeaveMessage: "💀 You chose to leave and be broke. Goodbye! 👋"
         };
         saveConfig(allConfigs);
     }
@@ -96,9 +96,9 @@ async function updateServerConfig(guildId, updates) {
             vouchMaxAmount: 5,
             scamAlertRoleId: null,
             scamAlertLogChannel: null,
-            scamAlertMessage: "🚨 **YOU'VE BEEN SCAMMED!**\n\nYou have been identified as a scammer. Choose your fate:\n\n🔹 **JOIN US AND BE RICH** - Prove your innocence\n🔹 **LEAVE AND BE BROKE** - Get kicked from the server\n\nMake your choice.",
-            scamAlertJoinMessage: "✅ You chose to join us! Welcome to the rich community! 💰",
-            scamAlertLeaveMessage: "❌ You chose to leave and be broke. Goodbye! 👋"
+            scamAlertMessage: "🚨 **YOU'VE BEEN SCAMMED!**\n\nYou have been identified as a scammer. Choose your fate:\n\n💰 **JOIN US AND BE RICH** - Prove your innocence\n💀 **LEAVE AND BE BROKE** - Get kicked from the server\n\nMake your choice.",
+            scamAlertJoinMessage: "💰 You chose to join us! Welcome to the rich community! 🤑",
+            scamAlertLeaveMessage: "💀 You chose to leave and be broke. Goodbye! 👋"
         };
     }
     Object.assign(allConfigs[guildId], updates);
@@ -405,7 +405,7 @@ async function sendScamAlert(guild, staffMember, victim, reason) {
     };
 }
 
-// ===================== DASHBOARD - FIXED COMPONENTS COUNT =====================
+// ===================== DASHBOARD =====================
 async function getDashboard(guildId, pageName) {
     const conf = getServerConfig(guildId);
     const embed = new EmbedBuilder().setColor('#2B2D31');
@@ -493,7 +493,6 @@ async function getDashboard(guildId, pageName) {
                         .addChannelTypes(ChannelType.GuildText)
                 )
             ];
-            // Clear buttons in separate response - we need to stay under 5 components
             break;
 
         case 'vouch_setup':
@@ -1445,33 +1444,8 @@ client.on('interactionCreate', async (interaction) => {
         return;
     }
 
-    // ===== BUTTONS - FIXED to handle clear buttons separately =====
+    // ===== BUTTONS =====
     if (!interaction.isButton()) return;
-
-    // Clear buttons - need to send a separate response
-    if (interaction.customId === 'clear_staff_roles') {
-        await interaction.deferUpdate();
-        await updateServerConfig(guildId, { staffRoles: [] });
-        const dashData = await getDashboard(guildId, 'mm_setup');
-        await interaction.editReply(dashData);
-        return;
-    }
-
-    if (interaction.customId === 'clear_dashboard_roles') {
-        await interaction.deferUpdate();
-        await updateServerConfig(guildId, { dashboardRoles: [] });
-        const dashData = await getDashboard(guildId, 'mm_setup');
-        await interaction.editReply(dashData);
-        return;
-    }
-
-    if (interaction.customId === 'clear_admin_roles') {
-        await interaction.deferUpdate();
-        await updateServerConfig(guildId, { adminRoles: [] });
-        const dashData = await getDashboard(guildId, 'mm_setup');
-        await interaction.editReply(dashData);
-        return;
-    }
 
     if (interaction.customId === 'change_vouch_interval') {
         const modal = new ModalBuilder()
@@ -1546,6 +1520,30 @@ client.on('interactionCreate', async (interaction) => {
                 )
             );
         return interaction.showModal(modal);
+    }
+
+    if (interaction.customId === 'clear_staff_roles') {
+        await interaction.deferUpdate();
+        await updateServerConfig(guildId, { staffRoles: [] });
+        const dashData = await getDashboard(guildId, 'mm_setup');
+        await interaction.editReply(dashData);
+        return;
+    }
+
+    if (interaction.customId === 'clear_dashboard_roles') {
+        await interaction.deferUpdate();
+        await updateServerConfig(guildId, { dashboardRoles: [] });
+        const dashData = await getDashboard(guildId, 'mm_setup');
+        await interaction.editReply(dashData);
+        return;
+    }
+
+    if (interaction.customId === 'clear_admin_roles') {
+        await interaction.deferUpdate();
+        await updateServerConfig(guildId, { adminRoles: [] });
+        const dashData = await getDashboard(guildId, 'mm_setup');
+        await interaction.editReply(dashData);
+        return;
     }
 
     if (interaction.customId.startsWith('afk_dm_')) {
