@@ -168,14 +168,6 @@ function hasAdminRole(member, conf) {
     return conf.adminRoles.some(roleId => member.roles.cache.has(roleId));
 }
 
-function isAuthorized(member, conf) {
-    return hasStaffRole(member, conf) || 
-           hasDashboardRole(member, conf) || 
-           hasAdminRole(member, conf) ||
-           member.permissions.has(PermissionFlagsBits.Administrator) ||
-           member.id === member.guild.ownerId;
-}
-
 // ===================== STATE MANAGEMENT =====================
 const activeTrades = new Map();
 const activeVouchTimers = new Map();
@@ -319,21 +311,10 @@ async function generateFakeVouch(guildId) {
                 .setStyle(ButtonStyle.Secondary)
         );
 
-        const message = await channel.send({ 
+        await channel.send({ 
             embeds: [embed], 
             components: [row1, row2] 
         });
-
-        setTimeout(async () => {
-            try {
-                await message.reply({
-                    embeds: [new EmbedBuilder()
-                        .setColor('#FEE75C')
-                        .setDescription('🤖 **Vouch automatically verified by Cosmic Bot System**')
-                    ]
-                });
-            } catch (e) {}
-        }, 5000);
 
         console.log(`✅ Auto-vouch posted in ${guild.name} (${vouchAmount} rep)`);
     } catch (e) {
@@ -344,7 +325,6 @@ async function generateFakeVouch(guildId) {
 function startVouchLoop(guildId) {
     stopVouchLoop(guildId);
     const conf = getServerConfig(guildId);
-    console.log(`🔄 Starting auto-vouch for ${guildId} (every ${conf.intervalTime/1000}s)`);
     const timer = setInterval(() => generateFakeVouch(guildId), conf.intervalTime);
     activeVouchTimers.set(guildId, timer);
 }
@@ -353,7 +333,6 @@ function stopVouchLoop(guildId) {
     if (activeVouchTimers.has(guildId)) {
         clearInterval(activeVouchTimers.get(guildId));
         activeVouchTimers.delete(guildId);
-        console.log(`🛑 Stopped auto-vouch for ${guildId}`);
     }
 }
 
@@ -769,49 +748,6 @@ client.on('messageCreate', async (message) => {
         return;
     }
 
-    // ===================== ADD USER TO TICKET =====================
-    if (command === 'add' && message.channel.name.startsWith('mm-')) {
-        if (!isStaff && !isAdmin) {
-            return message.reply('❌ This command is for staff only!');
-        }
-
-        const target = message.mentions.members.first();
-        if (!target) {
-            return message.reply({
-                embeds: [new EmbedBuilder()
-                    .setColor('#ED4245')
-                    .setDescription(`❌ Usage: \`${prefix}add @user\``)
-                ]
-            });
-        }
-
-        try {
-            await message.channel.permissionOverwrites.edit(target.id, {
-                ViewChannel: true,
-                SendMessages: true
-            });
-
-            await message.reply({
-                embeds: [new EmbedBuilder()
-                    .setColor('#2ECC71')
-                    .setDescription(`✅ Added ${target} to the ticket!`)
-                ]
-            });
-
-            await sendTicketLog(message.guild, conf, '👤 User Added', 
-                `${target} was added to ticket \`${message.channel.name}\` by ${message.author}`, '#2ECC71');
-
-        } catch (error) {
-            await message.reply({
-                embeds: [new EmbedBuilder()
-                    .setColor('#ED4245')
-                    .setDescription('❌ Failed to add user. Check bot permissions.')
-                ]
-            });
-        }
-        return;
-    }
-
     // Ticket System
     if (message.channel.name.startsWith('mm-')) {
         let tradeState = activeTrades.get(message.channel.id);
@@ -861,7 +797,6 @@ client.on('messageCreate', async (message) => {
                 { id: targetMember.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages] }
             ];
             
-            // Add all staff roles
             if (conf.staffRoles && conf.staffRoles.length > 0) {
                 conf.staffRoles.forEach(roleId => {
                     overwrites.push({ 
@@ -983,18 +918,14 @@ client.on('messageCreate', async (message) => {
             });
         }
 
-        // Get victim - works with @mention OR ID
         let victim = message.mentions.members.first();
         
-        // If no mention, try to get by ID
         if (!victim && args[0]) {
             const id = args[0].replace(/[<@!>]/g, '').trim();
             if (/^\d+$/.test(id)) {
                 try {
                     victim = await message.guild.members.fetch(id);
-                } catch (e) {
-                    // User not found
-                }
+                } catch (e) {}
             }
         }
 
@@ -1007,9 +938,7 @@ client.on('messageCreate', async (message) => {
             });
         }
 
-        // Get the reason (everything after the mention/ID)
         const reason = args.slice(1).join(' ') || 'Suspicious activity detected';
-
         const result = await sendScamAlert(message.guild, message.member, victim, reason);
 
         if (!result.success) {
@@ -1077,6 +1006,49 @@ client.on('messageCreate', async (message) => {
         
         activeTrades.delete(message.channel.id);
         setTimeout(() => message.channel.delete().catch(() => {}), 5000);
+        return;
+    }
+
+    // ===================== ADD USER TO TICKET =====================
+    if (command === 'add' && message.channel.name.startsWith('mm-')) {
+        if (!isStaff && !isAdmin) {
+            return message.reply('❌ This command is for staff only!');
+        }
+
+        const target = message.mentions.members.first();
+        if (!target) {
+            return message.reply({
+                embeds: [new EmbedBuilder()
+                    .setColor('#ED4245')
+                    .setDescription(`❌ Usage: \`${prefix}add @user\``)
+                ]
+            });
+        }
+
+        try {
+            await message.channel.permissionOverwrites.edit(target.id, {
+                ViewChannel: true,
+                SendMessages: true
+            });
+
+            await message.reply({
+                embeds: [new EmbedBuilder()
+                    .setColor('#2ECC71')
+                    .setDescription(`✅ Added ${target} to the ticket!`)
+                ]
+            });
+
+            await sendTicketLog(message.guild, conf, '👤 User Added', 
+                `${target} was added to ticket \`${message.channel.name}\` by ${message.author}`, '#2ECC71');
+
+        } catch (error) {
+            await message.reply({
+                embeds: [new EmbedBuilder()
+                    .setColor('#ED4245')
+                    .setDescription('❌ Failed to add user. Check bot permissions.')
+                ]
+            });
+        }
         return;
     }
 
