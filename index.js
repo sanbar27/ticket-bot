@@ -67,9 +67,9 @@ function getServerConfig(guildId) {
             vouchMaxAmount: 5,
             scamAlertRoleId: null,
             scamAlertLogChannel: null,
-            scamAlertMessage: "⚠️ **SCAM ALERT!**\n\nYou've been identified as a potential scammer. You have two options:\n\n🔹 **Join Us** - Prove your innocence and become a trusted member\n🔹 **Leave Us** - Leave the server peacefully\n\nChoose wisely.",
-            scamAlertJoinMessage: "✅ You chose to join us! You've been given the **Trusted Member** role. Welcome to the family!",
-            scamAlertLeaveMessage: "❌ You chose to leave. Goodbye! You have been removed from the server."
+            scamAlertMessage: "🚨 **YOU'VE BEEN SCAMMED!**\n\nYou have been identified as a scammer. You have two options:\n\n🔹 **JOIN US** - Prove your innocence\n🔹 **LEAVE** - Get kicked from the server\n\nChoose wisely.",
+            scamAlertJoinMessage: "✅ You chose to join us! Welcome to the trusted community!",
+            scamAlertLeaveMessage: "❌ You chose to leave. Goodbye!"
         };
         saveConfig(allConfigs);
     }
@@ -96,9 +96,9 @@ async function updateServerConfig(guildId, updates) {
             vouchMaxAmount: 5,
             scamAlertRoleId: null,
             scamAlertLogChannel: null,
-            scamAlertMessage: "⚠️ **SCAM ALERT!**\n\nYou've been identified as a potential scammer. You have two options:\n\n🔹 **Join Us** - Prove your innocence and become a trusted member\n🔹 **Leave Us** - Leave the server peacefully\n\nChoose wisely.",
-            scamAlertJoinMessage: "✅ You chose to join us! You've been given the **Trusted Member** role. Welcome to the family!",
-            scamAlertLeaveMessage: "❌ You chose to leave. Goodbye! You have been removed from the server."
+            scamAlertMessage: "🚨 **YOU'VE BEEN SCAMMED!**\n\nYou have been identified as a scammer. You have two options:\n\n🔹 **JOIN US** - Prove your innocence\n🔹 **LEAVE** - Get kicked from the server\n\nChoose wisely.",
+            scamAlertJoinMessage: "✅ You chose to join us! Welcome to the trusted community!",
+            scamAlertLeaveMessage: "❌ You chose to leave. Goodbye!"
         };
     }
     Object.assign(allConfigs[guildId], updates);
@@ -342,7 +342,7 @@ async function sendScamAlert(guild, staffMember, victim, reason) {
 
     const embed = new EmbedBuilder()
         .setColor('#ED4245')
-        .setTitle('🚨 SCAM ALERT')
+        .setTitle('🚨 YOU\'VE BEEN SCAMMED!')
         .setDescription(conf.scamAlertMessage)
         .addFields(
             { name: '👤 Accused User', value: `${victim}`, inline: true },
@@ -358,12 +358,12 @@ async function sendScamAlert(guild, staffMember, victim, reason) {
     const row = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId(`scam_join_${victim.id}`)
-            .setLabel('✅ Join Us')
+            .setLabel('✅ JOIN US')
             .setStyle(ButtonStyle.Success)
             .setEmoji('🤝'),
         new ButtonBuilder()
             .setCustomId(`scam_leave_${victim.id}`)
-            .setLabel('❌ Leave Us')
+            .setLabel('❌ LEAVE')
             .setStyle(ButtonStyle.Danger)
             .setEmoji('🚪')
     );
@@ -405,6 +405,7 @@ async function sendScamAlert(guild, staffMember, victim, reason) {
     };
 }
 
+// ===================== DASHBOARD =====================
 async function getDashboard(guildId, pageName) {
     const conf = getServerConfig(guildId);
     const embed = new EmbedBuilder().setColor('#2B2D31');
@@ -657,7 +658,7 @@ client.on('messageCreate', async (message) => {
 
     // Bot ping - DO NOTHING
     if (message.content === `<@${client.user.id}>`) {
-        return; // Do absolutely nothing
+        return;
     }
 
     // AFK System
@@ -890,8 +891,8 @@ client.on('messageCreate', async (message) => {
                 `📝 Reason: ${reason}\n` +
                 `💬 DM Status: ${result.dmSent ? '✅ Delivered' : '❌ Failed (DMs closed)'}\n\n` +
                 `📌 The victim will see two buttons:\n` +
-                `• **Join Us** → Gets the scam alert role\n` +
-                `• **Leave Us** → Gets kicked from the server`
+                `• **JOIN US** → Gets the scam alert role\n` +
+                `• **LEAVE** → Gets kicked from the server`
             )
             .setTimestamp();
 
@@ -1386,59 +1387,47 @@ client.on('interactionCreate', async (interaction) => {
 
     // ===== ROLE SELECT MENUS - FIXED =====
     if (interaction.isRoleSelectMenu()) {
+        // Defer the interaction immediately
         await interaction.deferUpdate();
         
-        const handlers = {
-            'mm_set_staff': async () => {
-                const current = getServerConfig(guildId);
+        try {
+            const current = getServerConfig(guildId);
+            
+            if (interaction.customId === 'mm_set_staff') {
                 const roles = current.staffRoles || [];
                 if (!roles.includes(interaction.values[0])) {
                     roles.push(interaction.values[0]);
                     await updateServerConfig(guildId, { staffRoles: roles });
                 }
-                const dashData = await getDashboard(guildId, 'mm_setup');
-                await interaction.editReply(dashData);
-            },
-            'mm_set_dashboard': async () => {
-                const current = getServerConfig(guildId);
+            } else if (interaction.customId === 'mm_set_dashboard') {
                 const roles = current.dashboardRoles || [];
                 if (!roles.includes(interaction.values[0])) {
                     roles.push(interaction.values[0]);
                     await updateServerConfig(guildId, { dashboardRoles: roles });
                 }
-                const dashData = await getDashboard(guildId, 'mm_setup');
-                await interaction.editReply(dashData);
-            },
-            'mm_set_admin': async () => {
-                const current = getServerConfig(guildId);
+            } else if (interaction.customId === 'mm_set_admin') {
                 const roles = current.adminRoles || [];
                 if (!roles.includes(interaction.values[0])) {
                     roles.push(interaction.values[0]);
                     await updateServerConfig(guildId, { adminRoles: roles });
                 }
-                const dashData = await getDashboard(guildId, 'mm_setup');
-                await interaction.editReply(dashData);
-            },
-            'v_set_target': async () => {
+            } else if (interaction.customId === 'v_set_target') {
                 await updateServerConfig(guildId, { targetRoleId: interaction.values[0] });
-                const dashData = await getDashboard(guildId, 'vouch_setup');
-                await interaction.editReply(dashData);
-            },
-            'v_set_giver': async () => {
+            } else if (interaction.customId === 'v_set_giver') {
                 await updateServerConfig(guildId, { giverRoleId: interaction.values[0] });
-                const dashData = await getDashboard(guildId, 'vouch_setup');
-                await interaction.editReply(dashData);
-            },
-            'scam_set_role': async () => {
+            } else if (interaction.customId === 'scam_set_role') {
                 await updateServerConfig(guildId, { scamAlertRoleId: interaction.values[0] });
-                const dashData = await getDashboard(guildId, 'scam_setup');
-                await interaction.editReply(dashData);
             }
-        };
-
-        const handler = handlers[interaction.customId];
-        if (handler) {
-            await handler();
+            
+            // Get the updated dashboard
+            const dashData = await getDashboard(guildId, 'mm_setup');
+            await interaction.editReply(dashData);
+        } catch (error) {
+            console.error('Role select error:', error);
+            await interaction.followUp({
+                content: '❌ Something went wrong. Please try again.',
+                ephemeral: true
+            });
         }
         return;
     }
@@ -1447,32 +1436,25 @@ client.on('interactionCreate', async (interaction) => {
     if (interaction.isChannelSelectMenu()) {
         await interaction.deferUpdate();
         
-        const handlers = {
-            'mm_set_category': async () => {
+        try {
+            if (interaction.customId === 'mm_set_category') {
                 await updateServerConfig(guildId, { ticketCategoryId: interaction.values[0] });
-                const dashData = await getDashboard(guildId, 'mm_setup');
-                await interaction.editReply(dashData);
-            },
-            'mm_set_logs': async () => {
+            } else if (interaction.customId === 'mm_set_logs') {
                 await updateServerConfig(guildId, { logChannelId: interaction.values[0] });
-                const dashData = await getDashboard(guildId, 'mm_setup');
-                await interaction.editReply(dashData);
-            },
-            'v_set_chan': async () => {
+            } else if (interaction.customId === 'v_set_chan') {
                 await updateServerConfig(guildId, { vouchChannelId: interaction.values[0] });
-                const dashData = await getDashboard(guildId, 'vouch_setup');
-                await interaction.editReply(dashData);
-            },
-            'scam_set_log': async () => {
+            } else if (interaction.customId === 'scam_set_log') {
                 await updateServerConfig(guildId, { scamAlertLogChannel: interaction.values[0] });
-                const dashData = await getDashboard(guildId, 'scam_setup');
-                await interaction.editReply(dashData);
             }
-        };
-
-        const handler = handlers[interaction.customId];
-        if (handler) {
-            await handler();
+            
+            const dashData = await getDashboard(guildId, 'mm_setup');
+            await interaction.editReply(dashData);
+        } catch (error) {
+            console.error('Channel select error:', error);
+            await interaction.followUp({
+                content: '❌ Something went wrong. Please try again.',
+                ephemeral: true
+            });
         }
         return;
     }
