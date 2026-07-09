@@ -660,6 +660,32 @@ async function getDashboard(guildId, pageName) {
     return { embeds: [embed], components };
 }
 
+// ===================== HELP COMMAND =====================
+async function sendHelpMessage(message) {
+    const embed = new EmbedBuilder()
+        .setColor('#5865F2')
+        .setTitle('🤝 Middleman System Guide')
+        .setDescription('Here\'s how the middleman system works:')
+        .addFields(
+            { name: '📋 **Step 1: Open a Ticket**', value: 'Click the **"Request Middleman"** button or use `!setup-ticket` to create a ticket channel.', inline: false },
+            { name: '👤 **Step 2: Add Trading Partner**', value: 'In your ticket, send the **username** or **ID** of the person you\'re trading with.', inline: false },
+            { name: '📝 **Step 3: Provide Deal Details**', value: 'Type the details of your trade (e.g., "Giving 5000 Robux for $20 PayPal").', inline: false },
+            { name: '🤝 **Step 4: Partner Confirms**', value: 'Your trading partner will **confirm** the deal details.', inline: false },
+            { name: '🛡️ **Step 5: Middleman Takes Over**', value: 'A staff member will **claim** the ticket and assist with the trade.', inline: false },
+            { name: '🔒 **Step 6: Complete Trade**', value: 'The middleman will ensure both parties complete their part of the trade safely.', inline: false }
+        )
+        .addFields(
+            { name: '💡 **How It Works**', value: '**User 1** gives item to **Middleman** → **Middleman** verifies → **User 2** sends payment → **Middleman** gives item to **User 2**', inline: false }
+        )
+        .addFields(
+            { name: '📌 **Ticket Commands**', value: '`!close` - Close ticket (Staff only)\n`!add @user` - Add user to ticket (Staff only)', inline: false }
+        )
+        .setFooter({ text: 'Cosmic™ Middleman System • Safe & Secure Trades' })
+        .setTimestamp();
+
+    await message.reply({ embeds: [embed] });
+}
+
 // ===================== BOT EVENTS =====================
 client.once('ready', async () => {
     console.log(`✅ ${client.user.tag} is online!`);
@@ -694,32 +720,6 @@ client.on('guildAuditLogEntryCreate', async (auditLog, guild) => {
         await triggerAntiNuke(guild, executorId, actionType, targetId);
     }
 });
-
-// ===================== HELP COMMAND =====================
-async function sendHelpMessage(message) {
-    const embed = new EmbedBuilder()
-        .setColor('#5865F2')
-        .setTitle('🤝 Middleman System Guide')
-        .setDescription('Here\'s how the middleman system works:')
-        .addFields(
-            { name: '📋 **Step 1: Open a Ticket**', value: 'Click the **"Request Middleman"** button or use `!setup-ticket` to create a ticket channel.', inline: false },
-            { name: '👤 **Step 2: Add Trading Partner**', value: 'In your ticket, send the **username** or **ID** of the person you\'re trading with.', inline: false },
-            { name: '📝 **Step 3: Provide Deal Details**', value: 'Type the details of your trade (e.g., "Giving 5000 Robux for $20 PayPal").', inline: false },
-            { name: '🤝 **Step 4: Partner Confirms**', value: 'Your trading partner will **confirm** the deal details.', inline: false },
-            { name: '🛡️ **Step 5: Middleman Takes Over**', value: 'A staff member will **claim** the ticket and assist with the trade.', inline: false },
-            { name: '🔒 **Step 6: Complete Trade**', value: 'The middleman will ensure both parties complete their part of the trade safely.', inline: false }
-        )
-        .addFields(
-            { name: '💡 **How It Works**', value: '**User 1** gives item to **Middleman** → **Middleman** verifies → **User 2** sends payment → **Middleman** gives item to **User 2**', inline: false }
-        )
-        .addFields(
-            { name: '📌 **Ticket Commands**', value: '`!close` - Close ticket (Staff only)\n`!add @user` - Add user to ticket (Staff only)', inline: false }
-        )
-        .setFooter({ text: 'Cosmic™ Middleman System • Safe & Secure Trades' })
-        .setTimestamp();
-
-    await message.reply({ embeds: [embed] });
-}
 
 // ===================== MESSAGE HANDLER =====================
 client.on('messageCreate', async (message) => {
@@ -1430,7 +1430,6 @@ client.on('interactionCreate', async (interaction) => {
         const action = interaction.customId.split('_')[1];
         const isJoin = action === 'join';
 
-        // Verify this is the victim clicking
         if (user.id !== victimId) {
             return interaction.reply({
                 content: '❌ This scam alert is not for you!',
@@ -1447,7 +1446,6 @@ client.on('interactionCreate', async (interaction) => {
         }
 
         if (isJoin) {
-            // JOIN: Give the role
             const role = interaction.guild.roles.cache.get(conf.scamAlertRoleId);
             if (role) {
                 try {
@@ -1469,7 +1467,6 @@ client.on('interactionCreate', async (interaction) => {
                         components: []
                     });
 
-                    // Log the decision
                     if (conf.scamAlertLogChannel) {
                         const logChan = interaction.guild.channels.cache.get(conf.scamAlertLogChannel);
                         if (logChan) {
@@ -1509,15 +1506,13 @@ client.on('interactionCreate', async (interaction) => {
                 }
             } else {
                 return interaction.reply({
-                    content: '❌ The scam alert role is not configured properly. Please contact an admin.',
+                    content: '❌ The scam alert role is not configured properly.',
                     ephemeral: true
                 });
             }
         } else {
-            // LEAVE: Kick the user
             try {
-                const reason = 'Chose to leave during scam alert process';
-                await victim.kick(reason);
+                await victim.kick('Chose to leave during scam alert process');
 
                 const embed = new EmbedBuilder()
                     .setColor('#ED4245')
@@ -2024,7 +2019,6 @@ client.on('interactionCreate', async (interaction) => {
                 ]
             });
 
-            // Add all staff roles to ticket
             if (conf.staffRoles && conf.staffRoles.length > 0) {
                 conf.staffRoles.forEach(roleId => {
                     ticketChannel.permissionOverwrites.create(roleId, {
