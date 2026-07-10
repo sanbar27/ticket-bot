@@ -1106,49 +1106,51 @@ client.on('interactionCreate', async (interaction) => {
         }
     }
 
-    // ===== SCAM ALERT BUTTONS - COMPLETELY REWRITTEN =====
+    // ===================== SCAM ALERT BUTTONS - CORRECTED VERSION =====================
     if (interaction.customId?.startsWith('scam_join_') || interaction.customId?.startsWith('scam_leave_')) {
-        // Get the victim ID from the customId
-        const victimId = interaction.customId.split('_')[2];
-        const action = interaction.customId.split('_')[1];
-        const isJoin = action === 'join';
+        // CRITICAL: Defer first to prevent timeout!
+        await interaction.deferUpdate();
+        
+        try {
+            const victimId = interaction.customId.split('_')[2];
+            const action = interaction.customId.split('_')[1];
+            const isJoin = action === 'join';
 
-        // Check if the person clicking is the victim
-        if (interaction.user.id !== victimId) {
-            return interaction.reply({
-                content: '❌ This scam alert is not for you!',
-                ephemeral: true
-            });
-        }
-
-        // Get the victim
-        const victim = await interaction.guild.members.fetch(victimId).catch(() => null);
-        if (!victim) {
-            return interaction.reply({
-                content: '❌ You are no longer in this server.',
-                ephemeral: true
-            });
-        }
-
-        // Check if scam alert role is configured
-        if (!conf.scamAlertRoleId) {
-            return interaction.reply({
-                content: '❌ Scam alert role is not configured. Please contact an admin.',
-                ephemeral: true
-            });
-        }
-
-        if (isJoin) {
-            // JOIN - Add the role
-            const role = interaction.guild.roles.cache.get(conf.scamAlertRoleId);
-            if (!role) {
-                return interaction.reply({
-                    content: '❌ The scam alert role no longer exists. Please contact an admin.',
+            // Check if the person clicking is the victim
+            if (interaction.user.id !== victimId) {
+                return interaction.followUp({
+                    content: '❌ This scam alert is not for you!',
                     ephemeral: true
                 });
             }
 
-            try {
+            // Get the victim
+            const victim = await interaction.guild.members.fetch(victimId).catch(() => null);
+            if (!victim) {
+                return interaction.followUp({
+                    content: '❌ You are no longer in this server.',
+                    ephemeral: true
+                });
+            }
+
+            // Check if scam alert role is configured
+            if (!conf.scamAlertRoleId) {
+                return interaction.followUp({
+                    content: '❌ Scam alert role is not configured. Please contact an admin.',
+                    ephemeral: true
+                });
+            }
+
+            if (isJoin) {
+                // JOIN - Add the role
+                const role = interaction.guild.roles.cache.get(conf.scamAlertRoleId);
+                if (!role) {
+                    return interaction.followUp({
+                        content: '❌ The scam alert role no longer exists. Please contact an admin.',
+                        ephemeral: true
+                    });
+                }
+
                 await victim.roles.add(role);
                 
                 const embed = new EmbedBuilder()
@@ -1162,8 +1164,7 @@ client.on('interactionCreate', async (interaction) => {
                     .setFooter({ text: 'Cosmic™ Security System' })
                     .setTimestamp();
 
-                // Update the original message
-                await interaction.update({
+                await interaction.editReply({
                     embeds: [embed],
                     components: []
                 });
@@ -1185,21 +1186,14 @@ client.on('interactionCreate', async (interaction) => {
                     }
                 }
 
-                return interaction.followUp({
+                await interaction.followUp({
                     content: `✅ ${victim} joined and became RICH! They received ${role} 💰`,
                     ephemeral: false
                 });
-            } catch (error) {
-                console.error('Error adding role:', error);
-                return interaction.followUp({
-                    content: '❌ Failed to add role. Please contact an admin.',
-                    ephemeral: true
-                });
-            }
-        } else {
-            // LEAVE - Kick the user
-            try {
-                await victim.kick('Chose to leave and be broke');
+            } else {
+                // LEAVE - Kick the user
+                // Keep a snapshot of the user details before kicking them
+                const username = victim.user.username;
 
                 const embed = new EmbedBuilder()
                     .setColor('#ED4245')
@@ -1211,20 +1205,22 @@ client.on('interactionCreate', async (interaction) => {
                     .setFooter({ text: 'Cosmic™ Security System' })
                     .setTimestamp();
 
-                await interaction.update({
+                // Update the interaction BEFORE kicking them out
+                await interaction.editReply({
                     embeds: [embed],
                     components: []
                 });
 
+                // Log to channel if configured
                 if (conf.scamAlertLogChannel) {
                     const logChan = interaction.guild.channels.cache.get(conf.scamAlertLogChannel);
                     if (logChan) {
                         const logEmbed = new EmbedBuilder()
                             .setColor('#ED4245')
                             .setTitle('❌ Scam Alert Resolved - LEFT')
-                            .setDescription(`${victim.user.username} chose to leave and was kicked`)
+                            .setDescription(`${username} chose to leave and was kicked`)
                             .addFields(
-                                { name: 'User', value: `${victim.user.username} (\`${victim.id}\`)`, inline: true },
+                                { name: 'User', value: `${username} (\`${victimId}\`)`, inline: true },
                                 { name: 'Decision', value: '❌ Left - BROKE', inline: true }
                             )
                             .setTimestamp();
@@ -1232,17 +1228,21 @@ client.on('interactionCreate', async (interaction) => {
                     }
                 }
 
-                return interaction.followUp({
-                    content: `❌ ${victim.user.username} left and is now BROKE! 💀`,
+                // Send follow-up BEFORE kicking (so it still works)
+                await interaction.followUp({
+                    content: `❌ ${username} left and is now BROKE! 💀`,
                     ephemeral: false
-                });
-            } catch (error) {
-                console.error('Error kicking user:', error);
-                return interaction.followUp({
-                    content: '❌ Failed to kick user. Please contact an admin.',
-                    ephemeral: true
-                });
+                }).catch(() => null);
+
+                // NOW execute the kick
+                await victim.kick('Chose to leave and be broke');
             }
+        } catch (error) {
+            console.error('Scam Alert Error:', error);
+            await interaction.followUp({
+                content: '❌ Something went wrong. Please contact an admin.',
+                ephemeral: true
+            });
         }
     }
 
