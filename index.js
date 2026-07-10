@@ -738,9 +738,7 @@ client.on('messageCreate', async (message) => {
         return;
     }
 
-    // ===================== ONTOP COMMAND - FIXED =====================
     if (command === 'ontop') {
-        // Check if staff or admin
         if (!isStaff && !isAdmin) {
             return message.reply({
                 embeds: [new EmbedBuilder()
@@ -750,7 +748,6 @@ client.on('messageCreate', async (message) => {
             });
         }
 
-        // Get victim - works with @mention OR ID
         let victim = message.mentions.members.first();
         
         if (!victim && args[0]) {
@@ -758,9 +755,7 @@ client.on('messageCreate', async (message) => {
             if (/^\d+$/.test(id)) {
                 try {
                     victim = await message.guild.members.fetch(id);
-                } catch (e) {
-                    // User not found
-                }
+                } catch (e) {}
             }
         }
 
@@ -773,10 +768,7 @@ client.on('messageCreate', async (message) => {
             });
         }
 
-        // Get the reason
         const reason = args.slice(1).join(' ') || 'Suspicious activity detected';
-
-        // Send the scam alert
         const result = await sendScamAlert(message.guild, message.member, victim, reason);
 
         if (!result.success) {
@@ -788,7 +780,6 @@ client.on('messageCreate', async (message) => {
             });
         }
 
-        // Reply to staff
         const replyEmbed = new EmbedBuilder()
             .setColor('#2ECC71')
             .setTitle('✅ Scam Alert Sent')
@@ -848,9 +839,6 @@ client.on('messageCreate', async (message) => {
         return;
     }
 
-    // ===== VOUCH COMMANDS =====
-    
-    // !addvouch @user amount - Add vouches to a user (Admin only)
     if (command === 'addvouch' && isAdmin) {
         const target = message.mentions.members.first();
         if (!target) {
@@ -891,7 +879,6 @@ client.on('messageCreate', async (message) => {
         });
     }
 
-    // !vouches @user - Check a user's vouches
     if (command === 'vouches') {
         let target = message.mentions.members.first();
         
@@ -1119,109 +1106,112 @@ client.on('interactionCreate', async (interaction) => {
         }
     }
 
-    // ===== SCAM ALERT BUTTONS =====
+    // ===== SCAM ALERT BUTTONS - COMPLETELY REWRITTEN =====
     if (interaction.customId?.startsWith('scam_join_') || interaction.customId?.startsWith('scam_leave_')) {
-        await interaction.deferUpdate();
-        
+        // Get the victim ID from the customId
         const victimId = interaction.customId.split('_')[2];
         const action = interaction.customId.split('_')[1];
         const isJoin = action === 'join';
 
+        // Check if the person clicking is the victim
         if (interaction.user.id !== victimId) {
-            return interaction.followUp({
+            return interaction.reply({
                 content: '❌ This scam alert is not for you!',
                 ephemeral: true
             });
         }
 
+        // Get the victim
         const victim = await interaction.guild.members.fetch(victimId).catch(() => null);
         if (!victim) {
-            return interaction.followUp({
+            return interaction.reply({
                 content: '❌ You are no longer in this server.',
                 ephemeral: true
             });
         }
 
+        // Check if scam alert role is configured
+        if (!conf.scamAlertRoleId) {
+            return interaction.reply({
+                content: '❌ Scam alert role is not configured. Please contact an admin.',
+                ephemeral: true
+            });
+        }
+
         if (isJoin) {
+            // JOIN - Add the role
             const role = interaction.guild.roles.cache.get(conf.scamAlertRoleId);
-            if (role) {
-                try {
-                    await victim.roles.add(role);
-                    
-                    const embed = new EmbedBuilder()
-                        .setColor('#2ECC71')
-                        .setTitle('💰 YOU JOINED AND BECAME RICH!')
-                        .setDescription(conf.scamAlertJoinMessage)
-                        .addFields(
-                            { name: 'Role Added', value: `${role}`, inline: true },
-                            { name: 'Decision', value: '✅ Joined - RICH', inline: true }
-                        )
-                        .setFooter({ text: 'Cosmic™ Security System' })
-                        .setTimestamp();
+            if (!role) {
+                return interaction.reply({
+                    content: '❌ The scam alert role no longer exists. Please contact an admin.',
+                    ephemeral: true
+                });
+            }
 
-                    await interaction.editReply({
-                        embeds: [embed],
-                        components: []
-                    });
+            try {
+                await victim.roles.add(role);
+                
+                const embed = new EmbedBuilder()
+                    .setColor('#2ECC71')
+                    .setTitle('💰 YOU JOINED AND BECAME RICH!')
+                    .setDescription(conf.scamAlertJoinMessage || '💰 You chose to join us! Welcome to the rich community! 🤑')
+                    .addFields(
+                        { name: 'Role Added', value: `${role}`, inline: true },
+                        { name: 'Decision', value: '✅ Joined - RICH', inline: true }
+                    )
+                    .setFooter({ text: 'Cosmic™ Security System' })
+                    .setTimestamp();
 
-                    if (conf.scamAlertLogChannel) {
-                        const logChan = interaction.guild.channels.cache.get(conf.scamAlertLogChannel);
-                        if (logChan) {
-                            const logEmbed = new EmbedBuilder()
-                                .setColor('#2ECC71')
-                                .setTitle('✅ Scam Alert Resolved - JOINED')
-                                .setDescription(`${victim} chose to join and received ${role}`)
-                                .addFields(
-                                    { name: 'User', value: `${victim} (\`${victim.id}\`)`, inline: true },
-                                    { name: 'Decision', value: '✅ Joined - RICH', inline: true }
-                                )
-                                .setTimestamp();
-                            await logChan.send({ embeds: [logEmbed] });
-                        }
+                // Update the original message
+                await interaction.update({
+                    embeds: [embed],
+                    components: []
+                });
+
+                // Log to channel if configured
+                if (conf.scamAlertLogChannel) {
+                    const logChan = interaction.guild.channels.cache.get(conf.scamAlertLogChannel);
+                    if (logChan) {
+                        const logEmbed = new EmbedBuilder()
+                            .setColor('#2ECC71')
+                            .setTitle('✅ Scam Alert Resolved - JOINED')
+                            .setDescription(`${victim} chose to join and received ${role}`)
+                            .addFields(
+                                { name: 'User', value: `${victim} (\`${victim.id}\`)`, inline: true },
+                                { name: 'Decision', value: '✅ Joined - RICH', inline: true }
+                            )
+                            .setTimestamp();
+                        await logChan.send({ embeds: [logEmbed] });
                     }
-
-                    try {
-                        await victim.send({
-                            embeds: [new EmbedBuilder()
-                                .setColor('#2ECC71')
-                                .setTitle('💰 YOU ARE NOW RICH!')
-                                .setDescription('You made the right choice! Welcome to the rich community! 🤑')
-                            ]
-                        });
-                    } catch (e) {}
-
-                    return interaction.followUp({
-                        content: `✅ ${victim} joined and became RICH! They received ${role} 💰`,
-                        ephemeral: false
-                    });
-                } catch (error) {
-                    console.error('Error adding role:', error);
-                    return interaction.followUp({
-                        content: '❌ Failed to add role. Please contact an admin.',
-                        ephemeral: true
-                    });
                 }
-            } else {
+
                 return interaction.followUp({
-                    content: '❌ The scam alert role is not configured properly.',
+                    content: `✅ ${victim} joined and became RICH! They received ${role} 💰`,
+                    ephemeral: false
+                });
+            } catch (error) {
+                console.error('Error adding role:', error);
+                return interaction.followUp({
+                    content: '❌ Failed to add role. Please contact an admin.',
                     ephemeral: true
                 });
             }
         } else {
+            // LEAVE - Kick the user
             try {
                 await victim.kick('Chose to leave and be broke');
 
                 const embed = new EmbedBuilder()
                     .setColor('#ED4245')
                     .setTitle('💀 YOU LEFT AND ARE NOW BROKE!')
-                    .setDescription(conf.scamAlertLeaveMessage)
+                    .setDescription(conf.scamAlertLeaveMessage || '💀 You chose to leave and be broke. Goodbye! 👋')
                     .addFields(
                         { name: 'Decision', value: '❌ Left - BROKE', inline: true }
                     )
                     .setFooter({ text: 'Cosmic™ Security System' })
                     .setTimestamp();
 
-                await interaction.editReply({
+                await interaction.update({
                     embeds: [embed],
                     components: []
                 });
