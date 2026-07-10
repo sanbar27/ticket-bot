@@ -251,29 +251,24 @@ async function generateFakeVouch(guildId) {
         
         if (!randomTarget || !randomGiver || randomTarget.id === randomGiver.id) return;
 
-        const vouchAmount = Math.floor(Math.random() * (conf.vouchMaxAmount - conf.vouchMinAmount + 1)) + conf.vouchMinAmount;
         const trade = FAUX_TRADES[Math.floor(Math.random() * FAUX_TRADES.length)];
 
+        // Simple vouch message - NO +X vouches, NO total vouches
         const embed = new EmbedBuilder()
             .setColor('#2ECC71')
             .setTitle('✅ New Vouch Verified')
             .setDescription(
-                `**+${vouchAmount} Reputation**\n\n` +
                 `**From:** <@${randomGiver.id}>\n` +
                 `**To:** <@${randomTarget.id}>\n\n` +
                 `📦 **Transaction:** \`${trade}\``
             )
             .setThumbnail(randomTarget.displayAvatarURL({ dynamic: true, size: 256 }))
             .addFields(
-                { name: '📊 Total Vouches', value: `${userVouchCounts.get(randomTarget.id) || 0} +${vouchAmount}`, inline: true },
                 { name: '🕐 Time', value: `<t:${Math.floor(Date.now()/1000)}:R>`, inline: true },
                 { name: '🔒 Status', value: '✅ Verified', inline: true }
             )
             .setFooter({ text: 'Cosmic™ Vouch System', iconURL: guild.iconURL({ dynamic: true }) })
             .setTimestamp();
-
-        const currentCount = userVouchCounts.get(randomTarget.id) || 0;
-        userVouchCounts.set(randomTarget.id, currentCount + vouchAmount);
 
         const row = new ActionRowBuilder().addComponents(
             new ButtonBuilder()
@@ -295,7 +290,7 @@ async function generateFakeVouch(guildId) {
             components: [row] 
         });
 
-        console.log(`✅ Auto-vouch posted in ${guild.name} (${vouchAmount} rep)`);
+        console.log(`✅ Auto-vouch posted in ${guild.name}`);
     } catch (e) {
         console.error('Error generating vouch:', e);
     }
@@ -529,7 +524,6 @@ async function getDashboard(guildId, pageName) {
             embed.setTitle('🎫 Vouch Configuration')
                 .setDescription(
                     `**Current Interval:** \`${formatTime(conf.intervalTime)}\`\n` +
-                    `**Vouch Amount Range:** ${conf.vouchMinAmount} - ${conf.vouchMaxAmount}\n\n` +
                     `**Target Role (Receives):** ${conf.targetRoleId ? `<@&${conf.targetRoleId}>` : '❌ Not Set'}\n` +
                     `**Giver Role (Gives):** ${conf.giverRoleId ? `<@&${conf.giverRoleId}>` : '❌ Not Set'}\n` +
                     `**Vouch Channel:** ${conf.vouchChannelId ? `<#${conf.vouchChannelId}>` : '❌ Not Set'}`
@@ -556,11 +550,7 @@ async function getDashboard(guildId, pageName) {
                     new ButtonBuilder()
                         .setCustomId('change_vouch_interval')
                         .setLabel('⏱️ Set Interval')
-                        .setStyle(ButtonStyle.Primary),
-                    new ButtonBuilder()
-                        .setCustomId('change_vouch_amount')
-                        .setLabel('🔢 Set Amount Range')
-                        .setStyle(ButtonStyle.Secondary)
+                        .setStyle(ButtonStyle.Primary)
                 )
             ];
             break;
@@ -619,10 +609,12 @@ async function getDashboard(guildId, pageName) {
                     `**🛡️ Admin Commands**\n` +
                     `> \`${conf.prefix}setup-ticket\` - Create ticket button\n` +
                     `> \`${conf.prefix}ontop @user <reason>\` - 🚨 SCAM ALERT system\n\n` +
-                    `**🎫 Auto-Vouch**\n` +
+                    `**🎫 Vouch Commands**\n` +
                     `> \`${conf.prefix}vouch start\` - Start auto-vouch\n` +
                     `> \`${conf.prefix}vouch stop\` - Stop auto-vouch\n` +
-                    `> \`${conf.prefix}vouch status\` - Check vouch status\n\n` +
+                    `> \`${conf.prefix}vouch status\` - Check vouch status\n` +
+                    `> \`${conf.prefix}addvouch @user <amount>\` - Add vouches to user\n` +
+                    `> \`${conf.prefix}vouches @user\` - Check user's vouches\n\n` +
                     `**⚙️ Configuration**\n` +
                     `> \`${conf.prefix}dashboard\` - Open control panel\n` +
                     `> \`${conf.prefix}afk\` - Toggle AFK mode`
@@ -852,6 +844,75 @@ client.on('messageCreate', async (message) => {
         return;
     }
 
+    // ===== NEW VOUCH COMMANDS =====
+    
+    // !addvouch @user amount - Add vouches to a user (Admin only)
+    if (command === 'addvouch' && isAdmin) {
+        const target = message.mentions.members.first();
+        if (!target) {
+            return message.reply({
+                embeds: [new EmbedBuilder()
+                    .setColor('#ED4245')
+                    .setDescription(`❌ Usage: \`${prefix}addvouch @user <amount>\`\nExample: \`${prefix}addvouch @user 49\``)
+                ]
+            });
+        }
+
+        const amount = parseInt(args[1]);
+        if (isNaN(amount) || amount < 1) {
+            return message.reply({
+                embeds: [new EmbedBuilder()
+                    .setColor('#ED4245')
+                    .setDescription(`❌ Please provide a valid amount (number greater than 0).`)
+                ]
+            });
+        }
+
+        const current = userVouchCounts.get(target.id) || 0;
+        userVouchCounts.set(target.id, current + amount);
+
+        // Log the addition
+        await sendTicketLog(message.guild, conf, '📊 Vouches Added', 
+            `${amount} vouches added to ${target} by ${message.author}\nTotal: ${userVouchCounts.get(target.id)}`, '#2ECC71');
+
+        return message.reply({
+            embeds: [new EmbedBuilder()
+                .setColor('#2ECC71')
+                .setTitle('✅ Vouches Added')
+                .setDescription(
+                    `**${amount}** vouches added to ${target}\n` +
+                    `📊 **Total Vouches:** ${userVouchCounts.get(target.id)}`
+                )
+                .setTimestamp()
+            ]
+        });
+    }
+
+    // !vouches @user - Check a user's vouches
+    if (command === 'vouches') {
+        let target = message.mentions.members.first();
+        
+        // If no mention, check the command author
+        if (!target) {
+            target = message.member;
+        }
+
+        const count = userVouchCounts.get(target.id) || 0;
+
+        const embed = new EmbedBuilder()
+            .setColor('#5865F2')
+            .setTitle('📊 Vouch Count')
+            .setDescription(
+                `${target} has **${count}** vouches! 🎉`
+            )
+            .setThumbnail(target.displayAvatarURL({ dynamic: true, size: 256 }))
+            .setFooter({ text: 'Cosmic™ Vouch System' })
+            .setTimestamp();
+
+        await message.reply({ embeds: [embed] });
+        return;
+    }
+
     if (command === 'vouch') {
         const subCommand = args[0]?.toLowerCase();
         
@@ -903,7 +964,7 @@ client.on('messageCreate', async (message) => {
                     .addFields(
                         { name: 'Status', value: status, inline: true },
                         { name: 'Interval', value: interval, inline: true },
-                        { name: 'Total Vouches', value: `${totalVouches}`, inline: true },
+                        { name: 'Total Users with Vouches', value: `${totalVouches}`, inline: true },
                         { name: 'Channel', value: channel, inline: false },
                         { name: 'Target Role', value: target, inline: true },
                         { name: 'Giver Role', value: giver, inline: true }
@@ -920,7 +981,9 @@ client.on('messageCreate', async (message) => {
                     `**Vouch Commands:**\n` +
                     `\`${prefix}vouch start\` - Start auto-vouch\n` +
                     `\`${prefix}vouch stop\` - Stop auto-vouch\n` +
-                    `\`${prefix}vouch status\` - Check vouch status`
+                    `\`${prefix}vouch status\` - Check vouch status\n` +
+                    `\`${prefix}addvouch @user <amount>\` - Add vouches to user\n` +
+                    `\`${prefix}vouches @user\` - Check user's vouches`
                 )
             ]
         });
@@ -1054,7 +1117,7 @@ client.on('interactionCreate', async (interaction) => {
         }
     }
 
-    // ===== SCAM ALERT BUTTONS - FIXED =====
+    // ===== SCAM ALERT BUTTONS =====
     if (interaction.customId?.startsWith('scam_join_') || interaction.customId?.startsWith('scam_leave_')) {
         await interaction.deferUpdate();
         
@@ -1062,7 +1125,6 @@ client.on('interactionCreate', async (interaction) => {
         const action = interaction.customId.split('_')[1];
         const isJoin = action === 'join';
 
-        // Check if this is the correct user
         if (interaction.user.id !== victimId) {
             return interaction.followUp({
                 content: '❌ This scam alert is not for you!',
@@ -1079,7 +1141,6 @@ client.on('interactionCreate', async (interaction) => {
         }
 
         if (isJoin) {
-            // JOIN - Give the role
             const role = interaction.guild.roles.cache.get(conf.scamAlertRoleId);
             if (role) {
                 try {
@@ -1088,7 +1149,7 @@ client.on('interactionCreate', async (interaction) => {
                     const embed = new EmbedBuilder()
                         .setColor('#2ECC71')
                         .setTitle('💰 YOU JOINED AND BECAME RICH!')
-                        .setDescription(conf.scamAlertJoinMessage || '💰 You chose to join us! Welcome to the rich community! 🤑')
+                        .setDescription(conf.scamAlertJoinMessage)
                         .addFields(
                             { name: 'Role Added', value: `${role}`, inline: true },
                             { name: 'Decision', value: '✅ Joined - RICH', inline: true }
@@ -1101,7 +1162,6 @@ client.on('interactionCreate', async (interaction) => {
                         components: []
                     });
 
-                    // Log to channel if configured
                     if (conf.scamAlertLogChannel) {
                         const logChan = interaction.guild.channels.cache.get(conf.scamAlertLogChannel);
                         if (logChan) {
@@ -1118,7 +1178,6 @@ client.on('interactionCreate', async (interaction) => {
                         }
                     }
 
-                    // Send DM confirmation
                     try {
                         await victim.send({
                             embeds: [new EmbedBuilder()
@@ -1147,14 +1206,13 @@ client.on('interactionCreate', async (interaction) => {
                 });
             }
         } else {
-            // LEAVE - Kick the user
             try {
                 await victim.kick('Chose to leave and be broke');
 
                 const embed = new EmbedBuilder()
                     .setColor('#ED4245')
                     .setTitle('💀 YOU LEFT AND ARE NOW BROKE!')
-                    .setDescription(conf.scamAlertLeaveMessage || '💀 You chose to leave and be broke. Goodbye! 👋')
+                    .setDescription(conf.scamAlertLeaveMessage)
                     .addFields(
                         { name: 'Decision', value: '❌ Left - BROKE', inline: true }
                     )
@@ -1166,7 +1224,6 @@ client.on('interactionCreate', async (interaction) => {
                     components: []
                 });
 
-                // Log to channel if configured
                 if (conf.scamAlertLogChannel) {
                     const logChan = interaction.guild.channels.cache.get(conf.scamAlertLogChannel);
                     if (logChan) {
@@ -1219,26 +1276,6 @@ client.on('interactionCreate', async (interaction) => {
             await updateServerConfig(guildId, { intervalTime: ms });
             const updatedConf = getServerConfig(guildId);
             if (updatedConf.running) startVouchLoop(guildId);
-            
-            const dashData = await getDashboard(guildId, 'vouch_setup');
-            return interaction.update(dashData);
-        }
-
-        if (interaction.customId === 'amount_modal') {
-            const min = parseInt(interaction.fields.getTextInputValue('min_amount'));
-            const max = parseInt(interaction.fields.getTextInputValue('max_amount'));
-            
-            if (isNaN(min) || isNaN(max) || min < 1 || max < min) {
-                return interaction.reply({
-                    content: '❌ Invalid amount. Min must be >= 1 and Max must be >= Min.',
-                    ephemeral: true
-                });
-            }
-            
-            await updateServerConfig(guildId, { 
-                vouchMinAmount: min, 
-                vouchMaxAmount: max 
-            });
             
             const dashData = await getDashboard(guildId, 'vouch_setup');
             return interaction.update(dashData);
@@ -1476,31 +1513,6 @@ client.on('interactionCreate', async (interaction) => {
         return interaction.showModal(modal);
     }
 
-    if (interaction.customId === 'change_vouch_amount') {
-        const modal = new ModalBuilder()
-            .setCustomId('amount_modal')
-            .setTitle('Set Vouch Amount Range')
-            .addComponents(
-                new ActionRowBuilder().addComponents(
-                    new TextInputBuilder()
-                        .setCustomId('min_amount')
-                        .setLabel('Minimum Vouch Amount')
-                        .setStyle(TextInputStyle.Short)
-                        .setRequired(true)
-                        .setPlaceholder('1')
-                ),
-                new ActionRowBuilder().addComponents(
-                    new TextInputBuilder()
-                        .setCustomId('max_amount')
-                        .setLabel('Maximum Vouch Amount')
-                        .setStyle(TextInputStyle.Short)
-                        .setRequired(true)
-                        .setPlaceholder('5')
-                )
-            );
-        return interaction.showModal(modal);
-    }
-
     if (interaction.customId === 'scam_edit_messages') {
         const modal = new ModalBuilder()
             .setCustomId('scam_edit_messages_modal')
@@ -1688,7 +1700,6 @@ client.on('interactionCreate', async (interaction) => {
                 ]
             });
 
-            // Add all staff roles to ticket
             const staffMentions = [];
             if (conf.staffRoles && conf.staffRoles.length > 0) {
                 conf.staffRoles.forEach(roleId => {
@@ -1736,7 +1747,6 @@ client.on('interactionCreate', async (interaction) => {
                     .setStyle(ButtonStyle.Danger)
             );
 
-            // Send ticket creation message with staff ping
             const staffPing = staffMentions.length > 0 ? `\n\n${staffMentions.join(' ')}` : '';
             await ticketChannel.send({ 
                 content: `${user} 👋${staffPing}`, 
