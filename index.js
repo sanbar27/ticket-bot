@@ -69,8 +69,6 @@ function getServerConfig(guildId) {
             intervalTime: 60000,
             running: false,
             whitelists: {},
-            vouchMinAmount: 1,
-            vouchMaxAmount: 5,
             scamAlertRoleId: null,
             scamAlertLogChannel: null,
             scamAlertMessage: "🚨 **YOU'VE BEEN SCAMMED!**\n\nYou have been identified as a scammer. Choose your fate:\n\n💰 **JOIN US AND BE RICH** - Prove your innocence\n💀 **LEAVE AND BE BROKE** - Get kicked from the server\n\nMake your choice.",
@@ -98,8 +96,6 @@ async function updateServerConfig(guildId, updates) {
             intervalTime: 60000,
             running: false,
             whitelists: {},
-            vouchMinAmount: 1,
-            vouchMaxAmount: 5,
             scamAlertRoleId: null,
             scamAlertLogChannel: null,
             scamAlertMessage: "🚨 **YOU'VE BEEN SCAMMED!**\n\nYou have been identified as a scammer. Choose your fate:\n\n💰 **JOIN US AND BE RICH** - Prove your innocence\n💀 **LEAVE AND BE BROKE** - Get kicked from the server\n\nMake your choice.",
@@ -253,7 +249,6 @@ async function generateFakeVouch(guildId) {
 
         const trade = FAUX_TRADES[Math.floor(Math.random() * FAUX_TRADES.length)];
 
-        // Simple vouch message - NO +X vouches, NO total vouches
         const embed = new EmbedBuilder()
             .setColor('#2ECC71')
             .setTitle('✅ New Vouch Verified')
@@ -743,7 +738,9 @@ client.on('messageCreate', async (message) => {
         return;
     }
 
+    // ===================== ONTOP COMMAND - FIXED =====================
     if (command === 'ontop') {
+        // Check if staff or admin
         if (!isStaff && !isAdmin) {
             return message.reply({
                 embeds: [new EmbedBuilder()
@@ -753,6 +750,7 @@ client.on('messageCreate', async (message) => {
             });
         }
 
+        // Get victim - works with @mention OR ID
         let victim = message.mentions.members.first();
         
         if (!victim && args[0]) {
@@ -760,7 +758,9 @@ client.on('messageCreate', async (message) => {
             if (/^\d+$/.test(id)) {
                 try {
                     victim = await message.guild.members.fetch(id);
-                } catch (e) {}
+                } catch (e) {
+                    // User not found
+                }
             }
         }
 
@@ -773,7 +773,10 @@ client.on('messageCreate', async (message) => {
             });
         }
 
+        // Get the reason
         const reason = args.slice(1).join(' ') || 'Suspicious activity detected';
+
+        // Send the scam alert
         const result = await sendScamAlert(message.guild, message.member, victim, reason);
 
         if (!result.success) {
@@ -785,6 +788,7 @@ client.on('messageCreate', async (message) => {
             });
         }
 
+        // Reply to staff
         const replyEmbed = new EmbedBuilder()
             .setColor('#2ECC71')
             .setTitle('✅ Scam Alert Sent')
@@ -844,7 +848,7 @@ client.on('messageCreate', async (message) => {
         return;
     }
 
-    // ===== NEW VOUCH COMMANDS =====
+    // ===== VOUCH COMMANDS =====
     
     // !addvouch @user amount - Add vouches to a user (Admin only)
     if (command === 'addvouch' && isAdmin) {
@@ -871,7 +875,6 @@ client.on('messageCreate', async (message) => {
         const current = userVouchCounts.get(target.id) || 0;
         userVouchCounts.set(target.id, current + amount);
 
-        // Log the addition
         await sendTicketLog(message.guild, conf, '📊 Vouches Added', 
             `${amount} vouches added to ${target} by ${message.author}\nTotal: ${userVouchCounts.get(target.id)}`, '#2ECC71');
 
@@ -892,7 +895,6 @@ client.on('messageCreate', async (message) => {
     if (command === 'vouches') {
         let target = message.mentions.members.first();
         
-        // If no mention, check the command author
         if (!target) {
             target = message.member;
         }
