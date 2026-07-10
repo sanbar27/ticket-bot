@@ -170,16 +170,66 @@ const afkUsers = new Map();
 const userVouchCounts = new Map();
 const scamAlertCooldowns = new Map();
 
+// ===================== UPDATED TRANSACTIONS - MORE VARIETY =====================
 const FAUX_TRADES = [
+    // Roblox
     "ROBUX: 5000 R$ W/T TAX FOR 20$ LTC",
     "ROBUX: 10k R$ CLEAN FOR 42$ SOL",
     "ROBUX: 2500 R$ AFTER TAX FOR 10$ PAYPAL",
+    "ROBUX: 20k R$ CLEAN FOR 80$ BTC",
+    "ROBUX: 1000 R$ FOR 4$ LTC",
+    "ROBUX: 50k R$ FOR 200$ BTC",
+    
+    // Blox Fruits
     "BLOX FRUITS: PERM BUDDHA FOR 20$ LTC",
     "BLOX FRUITS: KITSUNE FRUIT FOR 15$ SOL",
+    "BLOX FRUITS: PERM DRAGON FOR 35$ BTC",
+    "BLOX FRUITS: PERM KITSUNE FOR 24$ LTC",
+    "BLOX FRUITS: FRUIT STORAGE FOR 10$ PAYPAL",
+    "BLOX FRUITS: 2X MASTERY FOR 8$ LTC",
+    
+    // Adopt Me
+    "ADOPT ME: FR JUNGLE EGG PET FOR 15$ SOL",
     "ADOPT ME: NFR SHADOW DRAGON FOR 80$ BTC",
+    "ADOPT ME: MEGA FROST DRAGON FOR 120$ SOL",
+    "ADOPT ME: FR GIRAFFE FOR 45$ LTC",
+    "ADOPT ME: NFR OWL FOR 60$ PAYPAL",
+    "ADOPT ME: MEGA UNICORN FOR 30$ BTC",
+    
+    // Valorant
     "VALORANT: 2500 VP CARD FOR 15$ PAYPAL",
+    "VALORANT: 1000 VP FOR 6$ LTC",
+    "VALORANT: RADIANITE PACK FOR 20$ SOL",
+    
+    // Discord
     "DISCORD: 1 YEAR NITRO BOOST FOR 12$ CARD",
-    "STEAM: 50$ GIFT CARD FOR 40$ CRYPTO"
+    "DISCORD: 3 MONTHS NITRO FOR 4$ LTC",
+    "DISCORD: 1 MONTH NITRO FOR 1.5$ SOL",
+    
+    // Steam
+    "STEAM: 50$ GIFT CARD FOR 40$ CRYPTO",
+    "STEAM: 20$ GIFT CARD FOR 16$ LTC",
+    "STEAM: 100$ GIFT CARD FOR 80$ BTC",
+    
+    // Grow A Garden
+    "GROW A GARDEN: DRAGONFLY FOR 10$ LTC",
+    "GROW A GARDEN: EXCLUSIVE WINGS FOR 25$ SOL",
+    "GROW A GARDEN: RARE ITEM SET FOR 40$ PAYPAL",
+    
+    // Pet Simulator X
+    "PET SIM X: HUGE PET FOR 30$ BTC",
+    "PET SIM X: EXCLUSIVE EGG FOR 12$ LTC",
+    "PET SIM X: TITANIC PET FOR 200$ SOL",
+    
+    // MM2
+    "MM2: GODLY KNIFE SET FOR 50$ BTC",
+    "MM2: CHROMAS SET FOR 75$ SOL",
+    "MM2: LEGENDARY SET FOR 25$ LTC",
+    
+    // General
+    "CRYPTO: 0.5 BTC FOR 45000$ USDT",
+    "PAYPAL: 100$ FOR 0.0012 BTC",
+    "WISE: 200$ FOR 180$ LTC"
 ];
 
 async function triggerAntiNuke(guild, executorId, actionType, targetId) {
@@ -222,6 +272,7 @@ async function triggerAntiNuke(guild, executorId, actionType, targetId) {
     return true;
 }
 
+// ===================== CLEAN AUTO-VOUCH - NO BUTTONS, NO TIME, NO TRUST SCORE =====================
 async function generateFakeVouch(guildId) {
     const guild = client.guilds.cache.get(guildId);
     if (!guild) return;
@@ -249,41 +300,20 @@ async function generateFakeVouch(guildId) {
 
         const trade = FAUX_TRADES[Math.floor(Math.random() * FAUX_TRADES.length)];
 
+        // Clean vouch embed - NO buttons, NO time, NO trust score
         const embed = new EmbedBuilder()
             .setColor('#2ECC71')
-            .setTitle('✅ New Vouch Verified')
+            .setTitle('✅ Vouch Verified')
             .setDescription(
                 `**From:** <@${randomGiver.id}>\n` +
                 `**To:** <@${randomTarget.id}>\n\n` +
                 `📦 **Transaction:** \`${trade}\``
             )
             .setThumbnail(randomTarget.displayAvatarURL({ dynamic: true, size: 256 }))
-            .addFields(
-                { name: '🕐 Time', value: `<t:${Math.floor(Date.now()/1000)}:R>`, inline: true },
-                { name: '🔒 Status', value: '✅ Verified', inline: true }
-            )
-            .setFooter({ text: 'Cosmic™ Vouch System', iconURL: guild.iconURL({ dynamic: true }) })
-            .setTimestamp();
+            .setFooter({ text: 'Cosmic™ Vouch System', iconURL: guild.iconURL({ dynamic: true }) });
 
-        const row = new ActionRowBuilder().addComponents(
-            new ButtonBuilder()
-                .setCustomId('vouch_confirm')
-                .setLabel('✅ Confirm')
-                .setStyle(ButtonStyle.Success),
-            new ButtonBuilder()
-                .setCustomId('vouch_report')
-                .setLabel('🚨 Report')
-                .setStyle(ButtonStyle.Danger),
-            new ButtonBuilder()
-                .setCustomId('vouch_back')
-                .setLabel('🔄 Vouch Back')
-                .setStyle(ButtonStyle.Secondary)
-        );
-
-        await channel.send({ 
-            embeds: [embed], 
-            components: [row] 
-        });
+        // Just send the embed with NO buttons
+        await channel.send({ embeds: [embed] });
 
         console.log(`✅ Auto-vouch posted in ${guild.name}`);
     } catch (e) {
@@ -1106,7 +1136,7 @@ client.on('interactionCreate', async (interaction) => {
         }
     }
 
-    // ===================== SCAM ALERT BUTTONS - CORRECTED VERSION =====================
+    // ===== SCAM ALERT BUTTONS =====
     if (interaction.customId?.startsWith('scam_join_') || interaction.customId?.startsWith('scam_leave_')) {
         // CRITICAL: Defer first to prevent timeout!
         await interaction.deferUpdate();
@@ -1116,7 +1146,6 @@ client.on('interactionCreate', async (interaction) => {
             const action = interaction.customId.split('_')[1];
             const isJoin = action === 'join';
 
-            // Check if the person clicking is the victim
             if (interaction.user.id !== victimId) {
                 return interaction.followUp({
                     content: '❌ This scam alert is not for you!',
@@ -1124,7 +1153,6 @@ client.on('interactionCreate', async (interaction) => {
                 });
             }
 
-            // Get the victim
             const victim = await interaction.guild.members.fetch(victimId).catch(() => null);
             if (!victim) {
                 return interaction.followUp({
@@ -1133,7 +1161,6 @@ client.on('interactionCreate', async (interaction) => {
                 });
             }
 
-            // Check if scam alert role is configured
             if (!conf.scamAlertRoleId) {
                 return interaction.followUp({
                     content: '❌ Scam alert role is not configured. Please contact an admin.',
@@ -1142,7 +1169,6 @@ client.on('interactionCreate', async (interaction) => {
             }
 
             if (isJoin) {
-                // JOIN - Add the role
                 const role = interaction.guild.roles.cache.get(conf.scamAlertRoleId);
                 if (!role) {
                     return interaction.followUp({
@@ -1169,7 +1195,6 @@ client.on('interactionCreate', async (interaction) => {
                     components: []
                 });
 
-                // Log to channel if configured
                 if (conf.scamAlertLogChannel) {
                     const logChan = interaction.guild.channels.cache.get(conf.scamAlertLogChannel);
                     if (logChan) {
@@ -1191,8 +1216,6 @@ client.on('interactionCreate', async (interaction) => {
                     ephemeral: false
                 });
             } else {
-                // LEAVE - Kick the user
-                // Keep a snapshot of the user details before kicking them
                 const username = victim.user.username;
 
                 const embed = new EmbedBuilder()
@@ -1205,13 +1228,11 @@ client.on('interactionCreate', async (interaction) => {
                     .setFooter({ text: 'Cosmic™ Security System' })
                     .setTimestamp();
 
-                // Update the interaction BEFORE kicking them out
                 await interaction.editReply({
                     embeds: [embed],
                     components: []
                 });
 
-                // Log to channel if configured
                 if (conf.scamAlertLogChannel) {
                     const logChan = interaction.guild.channels.cache.get(conf.scamAlertLogChannel);
                     if (logChan) {
@@ -1228,13 +1249,11 @@ client.on('interactionCreate', async (interaction) => {
                     }
                 }
 
-                // Send follow-up BEFORE kicking (so it still works)
                 await interaction.followUp({
                     content: `❌ ${username} left and is now BROKE! 💀`,
                     ephemeral: false
                 }).catch(() => null);
 
-                // NOW execute the kick
                 await victim.kick('Chose to leave and be broke');
             }
         } catch (error) {
@@ -1606,56 +1625,9 @@ client.on('interactionCreate', async (interaction) => {
         return interaction.showModal(modal);
     }
 
-    if (interaction.customId === 'vouch_confirm') {
-        await interaction.deferUpdate();
-        const embed = EmbedBuilder.from(interaction.message.embeds[0])
-            .setColor('#2ECC71')
-            .addFields(
-                { name: '✅ Status', value: 'Verified by community', inline: true },
-                { name: '🔒 Trust Score', value: '100%', inline: true }
-            );
-        
-        await interaction.editReply({ embeds: [embed], components: [] });
-        await interaction.followUp({
-            content: '✅ **Vouch confirmed and verified!**',
-            ephemeral: true
-        });
-        return;
-    }
-
-    if (interaction.customId === 'vouch_report') {
-        const modal = new ModalBuilder()
-            .setCustomId('report_modal')
-            .setTitle('Report Vouch')
-            .addComponents(
-                new ActionRowBuilder().addComponents(
-                    new TextInputBuilder()
-                        .setCustomId('report_reason')
-                        .setLabel('Reason for reporting')
-                        .setStyle(TextInputStyle.Paragraph)
-                        .setRequired(true)
-                        .setPlaceholder('Explain why this vouch should be removed...')
-                )
-            );
-        return interaction.showModal(modal);
-    }
-
-    if (interaction.customId === 'vouch_back') {
-        const embed = new EmbedBuilder()
-            .setColor('#5865F2')
-            .setTitle('🔄 Vouch Back Request')
-            .setDescription(`<@${interaction.user.id}> wants to vouch back!`)
-            .addFields(
-                { name: 'Status', value: '⏳ Pending staff approval' }
-            )
-            .setTimestamp();
-        
-        await interaction.reply({
-            embeds: [embed],
-            ephemeral: false
-        });
-        return;
-    }
+    // Vouch Confirm - Removed
+    // Vouch Report - Removed  
+    // Vouch Back - Removed
 
     // ===== TICKET BUTTONS =====
     if (interaction.customId === 'create_ticket') {
