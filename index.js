@@ -1054,7 +1054,7 @@ client.on('interactionCreate', async (interaction) => {
         }
     }
 
-    // ===== SCAM ALERT BUTTONS =====
+    // ===== SCAM ALERT BUTTONS - FIXED =====
     if (interaction.customId?.startsWith('scam_join_') || interaction.customId?.startsWith('scam_leave_')) {
         await interaction.deferUpdate();
         
@@ -1062,6 +1062,7 @@ client.on('interactionCreate', async (interaction) => {
         const action = interaction.customId.split('_')[1];
         const isJoin = action === 'join';
 
+        // Check if this is the correct user
         if (interaction.user.id !== victimId) {
             return interaction.followUp({
                 content: '❌ This scam alert is not for you!',
@@ -1078,6 +1079,7 @@ client.on('interactionCreate', async (interaction) => {
         }
 
         if (isJoin) {
+            // JOIN - Give the role
             const role = interaction.guild.roles.cache.get(conf.scamAlertRoleId);
             if (role) {
                 try {
@@ -1086,7 +1088,7 @@ client.on('interactionCreate', async (interaction) => {
                     const embed = new EmbedBuilder()
                         .setColor('#2ECC71')
                         .setTitle('💰 YOU JOINED AND BECAME RICH!')
-                        .setDescription(conf.scamAlertJoinMessage)
+                        .setDescription(conf.scamAlertJoinMessage || '💰 You chose to join us! Welcome to the rich community! 🤑')
                         .addFields(
                             { name: 'Role Added', value: `${role}`, inline: true },
                             { name: 'Decision', value: '✅ Joined - RICH', inline: true }
@@ -1099,6 +1101,7 @@ client.on('interactionCreate', async (interaction) => {
                         components: []
                     });
 
+                    // Log to channel if configured
                     if (conf.scamAlertLogChannel) {
                         const logChan = interaction.guild.channels.cache.get(conf.scamAlertLogChannel);
                         if (logChan) {
@@ -1115,6 +1118,7 @@ client.on('interactionCreate', async (interaction) => {
                         }
                     }
 
+                    // Send DM confirmation
                     try {
                         await victim.send({
                             embeds: [new EmbedBuilder()
@@ -1143,13 +1147,14 @@ client.on('interactionCreate', async (interaction) => {
                 });
             }
         } else {
+            // LEAVE - Kick the user
             try {
                 await victim.kick('Chose to leave and be broke');
 
                 const embed = new EmbedBuilder()
                     .setColor('#ED4245')
                     .setTitle('💀 YOU LEFT AND ARE NOW BROKE!')
-                    .setDescription(conf.scamAlertLeaveMessage)
+                    .setDescription(conf.scamAlertLeaveMessage || '💀 You chose to leave and be broke. Goodbye! 👋')
                     .addFields(
                         { name: 'Decision', value: '❌ Left - BROKE', inline: true }
                     )
@@ -1161,6 +1166,7 @@ client.on('interactionCreate', async (interaction) => {
                     components: []
                 });
 
+                // Log to channel if configured
                 if (conf.scamAlertLogChannel) {
                     const logChan = interaction.guild.channels.cache.get(conf.scamAlertLogChannel);
                     if (logChan) {
@@ -1352,7 +1358,6 @@ client.on('interactionCreate', async (interaction) => {
         await interaction.deferUpdate();
         
         try {
-            // Handle each customId properly with correct page returns
             if (interaction.customId === 'mm_set_staff') {
                 const current = getServerConfig(guildId);
                 const roles = current.staffRoles || [];
@@ -1683,12 +1688,15 @@ client.on('interactionCreate', async (interaction) => {
                 ]
             });
 
+            // Add all staff roles to ticket
+            const staffMentions = [];
             if (conf.staffRoles && conf.staffRoles.length > 0) {
                 conf.staffRoles.forEach(roleId => {
                     ticketChannel.permissionOverwrites.create(roleId, {
                         ViewChannel: true,
                         SendMessages: true
                     });
+                    staffMentions.push(`<@&${roleId}>`);
                 });
             }
 
@@ -1728,7 +1736,13 @@ client.on('interactionCreate', async (interaction) => {
                     .setStyle(ButtonStyle.Danger)
             );
 
-            await ticketChannel.send({ content: `${user} 👋`, embeds: [embed], components: [row] });
+            // Send ticket creation message with staff ping
+            const staffPing = staffMentions.length > 0 ? `\n\n${staffMentions.join(' ')}` : '';
+            await ticketChannel.send({ 
+                content: `${user} 👋${staffPing}`, 
+                embeds: [embed], 
+                components: [row] 
+            });
             
             return interaction.editReply({
                 embeds: [new EmbedBuilder()
