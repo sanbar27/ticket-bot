@@ -151,6 +151,7 @@ async function sendTicketLog(guild, conf, title, description, color) {
     }
 }
 
+// ===== PERMISSION CHECKERS - FIXED =====
 function hasStaffRole(member, conf) {
     if (!conf.staffRoles || conf.staffRoles.length === 0) return false;
     return conf.staffRoles.some(roleId => member.roles.cache.has(roleId));
@@ -164,6 +165,16 @@ function hasDashboardRole(member, conf) {
 function hasAdminRole(member, conf) {
     if (!conf.adminRoles || conf.adminRoles.length === 0) return false;
     return conf.adminRoles.some(roleId => member.roles.cache.has(roleId));
+}
+
+// ===== AUTHORIZED CHECKER - Dashboard Role =====
+function isAuthorized(member, conf) {
+    // Check if member has ANY authorized role OR is admin OR is owner
+    return hasStaffRole(member, conf) || 
+           hasDashboardRole(member, conf) || 
+           hasAdminRole(member, conf) ||
+           member.permissions.has(PermissionFlagsBits.Administrator) ||
+           member.id === member.guild.ownerId;
 }
 
 function hasVouchVerifyRole(member, conf) {
@@ -244,10 +255,8 @@ async function triggerAntiNuke(guild, executorId, actionType, targetId) {
 
 // ===================== VOUCH SYSTEM FUNCTIONS =====================
 
-// Handle /vouch submit
 async function handleVouchSubmit(interaction) {
-    // Defer FIRST - this prevents timeout!
-    await interaction.deferReply({ flags: 64 }); // Using flags instead of ephemeral
+    await interaction.deferReply({ flags: 64 });
     
     const guildId = interaction.guild.id;
     const conf = getServerConfig(guildId);
@@ -312,15 +321,13 @@ async function handleVouchSubmit(interaction) {
     });
 }
 
-// Handle vouch verify button
 async function handleVouchVerify(interaction) {
-    // Defer update first
     await interaction.deferUpdate();
     
     const guildId = interaction.guild.id;
     const conf = getServerConfig(guildId);
     
-    if (!hasStaffRole(interaction.member, conf) && !hasAdminRole(interaction.member, conf) && !hasVouchVerifyRole(interaction.member, conf)) {
+    if (!isAuthorized(interaction.member, conf) && !hasVouchVerifyRole(interaction.member, conf)) {
         return interaction.followUp({
             content: '❌ You do not have permission to verify vouches!',
             flags: 64
@@ -359,14 +366,13 @@ async function handleVouchVerify(interaction) {
     });
 }
 
-// Handle vouch deny button
 async function handleVouchDeny(interaction) {
     await interaction.deferUpdate();
     
     const guildId = interaction.guild.id;
     const conf = getServerConfig(guildId);
     
-    if (!hasStaffRole(interaction.member, conf) && !hasAdminRole(interaction.member, conf) && !hasVouchVerifyRole(interaction.member, conf)) {
+    if (!isAuthorized(interaction.member, conf) && !hasVouchVerifyRole(interaction.member, conf)) {
         return interaction.followUp({
             content: '❌ You do not have permission to deny vouches!',
             flags: 64
@@ -399,7 +405,6 @@ async function handleVouchDeny(interaction) {
     });
 }
 
-// Handle /vouches command
 async function handleVouches(interaction) {
     const target = interaction.options.getUser('user') || interaction.user;
     const count = userVouchCounts.get(target.id) || 0;
@@ -805,60 +810,25 @@ async function getDashboard(guildId, pageName) {
             embed.setTitle('📜 Command Directory')
                 .setDescription(
                     `**Prefix:** \`${conf.prefix}\`\n\n` +
-                    `**🛡️ Moderation**\n` +
-                    `> \`${conf.prefix}ban @user\` - Ban a member\n` +
-                    `> \`${conf.prefix}unban <id>\` - Unban by ID\n` +
-                    `> \`${conf.prefix}kick @user\` - Kick a member\n` +
-                    `> \`${conf.prefix}mute @user <time>\` - Timeout\n` +
-                    `> \`${conf.prefix}purge <amount>\` - Clear messages\n` +
-                    `> \`${conf.prefix}fban @user\` - Fake ban\n\n` +
-                    `**🤝 Tickets**\n` +
-                    `> \`${conf.prefix}setup-ticket\` - Create ticket button\n` +
-                    `> \`${conf.prefix}close\` - Close current ticket\n` +
-                    `> \`${conf.prefix}add @user\` - Add user to ticket\n` +
-                    `> \`${conf.prefix}ontop @user <reason>\` - 🚨 SCAM ALERT system\n\n` +
-                    `**🎫 Auto-Vouch**\n` +
-                    `> \`${conf.prefix}vouch start\` - Start auto-vouch\n` +
-                    `> \`${conf.prefix}vouch stop\` - Stop auto-vouch\n` +
-                    `> \`${conf.prefix}vouch status\` - Check vouch status\n\n` +
-                    `**⚙️ Configuration**\n` +
-                    `> \`${conf.prefix}whitelist @user\` - Manage permissions\n` +
-                    `> \`${conf.prefix}afk\` - Toggle AFK mode\n` +
-                    `> \`${conf.prefix}help\` - Show middleman guide\n\n` +
-                    `**📩 Vouch System**\n` +
+                    `**🤝 Tickets (Slash Commands)**\n` +
+                    `> \`/claim\` - Claim a ticket\n` +
+                    `> \`/close\` - Close current ticket\n` +
+                    `> \`/add @user\` - Add user to ticket\n\n` +
+                    `**🎫 Vouch (Slash Commands)**\n` +
                     `> \`/vouch\` - Submit a vouch with trade details\n` +
-                    `> \`/vouches @user\` - Check user's vouches`
+                    `> \`/vouches @user\` - Check user's vouches\n\n` +
+                    `**🛡️ Admin Commands**\n` +
+                    `> \`${conf.prefix}setup-ticket\` - Create ticket button\n` +
+                    `> \`${conf.prefix}ontop @user <reason>\` - 🚨 SCAM ALERT system\n\n` +
+                    `**⚙️ Configuration**\n` +
+                    `> \`${conf.prefix}dashboard\` - Open control panel\n` +
+                    `> \`${conf.prefix}afk\` - Toggle AFK mode`
                 );
             components = [navRow];
             break;
     }
 
     return { embeds: [embed], components };
-}
-
-async function sendHelpMessage(message) {
-    const embed = new EmbedBuilder()
-        .setColor('#5865F2')
-        .setTitle('🤝 Middleman System Guide')
-        .setDescription('Here\'s how the middleman system works:')
-        .addFields(
-            { name: '📋 Step 1: Open a Ticket', value: 'Click the **"Request Middleman"** button or use `!setup-ticket` to create a ticket channel.', inline: false },
-            { name: '👤 Step 2: Add Trading Partner', value: 'In your ticket, send the **username** or **ID** of the person you\'re trading with.', inline: false },
-            { name: '📝 Step 3: Provide Deal Details', value: 'Type the details of your trade (e.g., "Giving 5000 Robux for $20 PayPal").', inline: false },
-            { name: '🤝 Step 4: Partner Confirms', value: 'Your trading partner will **confirm** the deal details.', inline: false },
-            { name: '🛡️ Step 5: Middleman Takes Over', value: 'A staff member will **claim** the ticket and assist with the trade.', inline: false },
-            { name: '🔒 Step 6: Complete Trade', value: 'The middleman will ensure both parties complete their part of the trade safely.', inline: false }
-        )
-        .addFields(
-            { name: '💡 How It Works', value: '**User 1** gives item to **Middleman** → **Middleman** verifies → **User 2** sends payment → **Middleman** gives item to **User 2**', inline: false }
-        )
-        .addFields(
-            { name: '📌 Ticket Commands', value: '`!close` - Close ticket (Staff only)\n`!add @user` - Add user to ticket (Staff only)', inline: false }
-        )
-        .setFooter({ text: 'Cosmic™ Middleman System • Safe & Secure Trades' })
-        .setTimestamp();
-
-    await message.reply({ embeds: [embed] });
 }
 
 client.once('ready', async () => {
@@ -901,7 +871,11 @@ client.on('messageCreate', async (message) => {
     const guildId = message.guild.id;
     const conf = getServerConfig(guildId);
     const prefix = conf.prefix;
-    const isPing = message.content === `<@${client.user.id}>`;
+
+    // ===== BOT PING - DO NOTHING =====
+    if (message.content === `<@${client.user.id}>`) {
+        return; // Absolutely nothing
+    }
 
     if (afkUsers.has(message.author.id)) {
         afkUsers.delete(message.author.id);
@@ -921,12 +895,6 @@ client.on('messageCreate', async (message) => {
                 .then(m => setTimeout(() => m.delete().catch(() => {}), 5000));
         }
     });
-
-    // ===== HELP COMMAND =====
-    if (message.content === `${prefix}help` || message.content === `${prefix}help middleman`) {
-        await sendHelpMessage(message);
-        return;
-    }
 
     // Ticket System
     if (message.channel.name.startsWith('mm-')) {
@@ -1059,22 +1027,19 @@ client.on('messageCreate', async (message) => {
     }
 
     // Commands
-    if (!message.content.startsWith(prefix) && !isPing) return;
+    if (!message.content.startsWith(prefix)) return;
 
-    const args = isPing ? [] : message.content.slice(prefix.length).trim().split(/ +/);
-    const command = isPing ? 'dashboard' : args.shift().toLowerCase();
+    const args = message.content.slice(prefix.length).trim().split(/ +/);
+    const command = args.shift().toLowerCase();
     const isAdmin = message.member.permissions.has(PermissionFlagsBits.Administrator);
-    const isStaff = hasStaffRole(message.member, conf);
 
+    // ===== DASHBOARD - Now uses isAuthorized =====
     if (command === 'dashboard') {
-        const hasDashRole = hasDashboardRole(message.member, conf);
-        const hasAdmin = hasAdminRole(message.member, conf);
-        
-        if (!isAdmin && message.author.id !== message.guild.ownerId && !hasDashRole && !hasAdmin) {
+        if (!isAuthorized(message.member, conf)) {
             return message.reply({
                 embeds: [new EmbedBuilder()
                     .setColor('#ED4245')
-                    .setDescription('❌ Access Denied. You need a Dashboard Role.')
+                    .setDescription('❌ Access Denied. You need a Staff, Dashboard, or Admin Role.')
                 ]
             });
         }
@@ -1084,6 +1049,7 @@ client.on('messageCreate', async (message) => {
         return;
     }
 
+    // ===== SETUP TICKET =====
     if (command === 'setup-ticket' && isAdmin) {
         const embed = new EmbedBuilder()
             .setColor('#2B2D31')
@@ -1103,8 +1069,9 @@ client.on('messageCreate', async (message) => {
         return;
     }
 
+    // ===== CLOSE TICKET =====
     if (command === 'close' && message.channel.name.startsWith('mm-')) {
-        if (!isStaff && !isAdmin) {
+        if (!isAuthorized(message.member, conf)) {
             return message.reply('❌ Staff access required.');
         }
 
@@ -1123,9 +1090,10 @@ client.on('messageCreate', async (message) => {
         return;
     }
 
+    // ===== ADD USER TO TICKET =====
     if (command === 'add' && message.channel.name.startsWith('mm-')) {
-        if (!isStaff && !isAdmin) {
-            return message.reply('❌ This command is for staff only!');
+        if (!isAuthorized(message.member, conf)) {
+            return message.reply('❌ Staff access required.');
         }
 
         const target = message.mentions.members.first();
@@ -1165,8 +1133,9 @@ client.on('messageCreate', async (message) => {
         return;
     }
 
+    // ===== ONTOP (SCAM ALERT) =====
     if (command === 'ontop') {
-        if (!isStaff && !isAdmin) {
+        if (!isAuthorized(message.member, conf)) {
             return message.reply({
                 embeds: [new EmbedBuilder()
                     .setColor('#ED4245')
@@ -1603,7 +1572,7 @@ client.on('interactionCreate', async (interaction) => {
 
         // Handle /claim
         if (commandName === 'claim') {
-            if (!isStaff && !isAdmin) {
+            if (!isAuthorized(member, conf)) {
                 return interaction.reply({
                     content: '❌ Staff access only!',
                     flags: 64
@@ -1638,7 +1607,7 @@ client.on('interactionCreate', async (interaction) => {
 
         // Handle /close
         if (commandName === 'close') {
-            if (!isStaff && !isAdmin) {
+            if (!isAuthorized(member, conf)) {
                 return interaction.reply({
                     content: '❌ Staff access only!',
                     flags: 64
@@ -1669,7 +1638,7 @@ client.on('interactionCreate', async (interaction) => {
 
         // Handle /add
         if (commandName === 'add') {
-            if (!isStaff && !isAdmin) {
+            if (!isAuthorized(member, conf)) {
                 return interaction.reply({
                     content: '❌ Staff access only!',
                     flags: 64
@@ -2012,57 +1981,64 @@ client.on('interactionCreate', async (interaction) => {
         }
     }
 
-    // ===== ROLE SELECT MENUS =====
+    // ===== ROLE SELECT MENUS - FIXED FOR MULTIPLE ROLES =====
     if (interaction.isRoleSelectMenu()) {
         await interaction.deferUpdate();
         
         try {
+            const selectedRoles = interaction.values; // Array of ALL selected roles
             const current = getServerConfig(guildId);
             
             if (interaction.customId === 'mm_set_staff') {
                 const roles = current.staffRoles || [];
-                if (!roles.includes(interaction.values[0])) {
-                    roles.push(interaction.values[0]);
-                    await updateServerConfig(guildId, { staffRoles: roles });
-                }
+                selectedRoles.forEach(roleId => {
+                    if (!roles.includes(roleId)) {
+                        roles.push(roleId);
+                    }
+                });
+                await updateServerConfig(guildId, { staffRoles: roles });
                 const dashData = await getDashboard(guildId, 'mm_roles');
                 return await interaction.editReply(dashData);
             }
             
             if (interaction.customId === 'mm_set_dashboard') {
                 const roles = current.dashboardRoles || [];
-                if (!roles.includes(interaction.values[0])) {
-                    roles.push(interaction.values[0]);
-                    await updateServerConfig(guildId, { dashboardRoles: roles });
-                }
+                selectedRoles.forEach(roleId => {
+                    if (!roles.includes(roleId)) {
+                        roles.push(roleId);
+                    }
+                });
+                await updateServerConfig(guildId, { dashboardRoles: roles });
                 const dashData = await getDashboard(guildId, 'mm_roles');
                 return await interaction.editReply(dashData);
             }
             
             if (interaction.customId === 'mm_set_admin') {
                 const roles = current.adminRoles || [];
-                if (!roles.includes(interaction.values[0])) {
-                    roles.push(interaction.values[0]);
-                    await updateServerConfig(guildId, { adminRoles: roles });
-                }
+                selectedRoles.forEach(roleId => {
+                    if (!roles.includes(roleId)) {
+                        roles.push(roleId);
+                    }
+                });
+                await updateServerConfig(guildId, { adminRoles: roles });
                 const dashData = await getDashboard(guildId, 'mm_roles');
                 return await interaction.editReply(dashData);
             }
             
             if (interaction.customId === 'v_set_target') {
-                await updateServerConfig(guildId, { targetRoleId: interaction.values[0] });
+                await updateServerConfig(guildId, { targetRoleId: selectedRoles[0] || null });
                 const dashData = await getDashboard(guildId, 'vouch_setup');
                 return await interaction.editReply(dashData);
             }
             
             if (interaction.customId === 'v_set_giver') {
-                await updateServerConfig(guildId, { giverRoleId: interaction.values[0] });
+                await updateServerConfig(guildId, { giverRoleId: selectedRoles[0] || null });
                 const dashData = await getDashboard(guildId, 'vouch_setup');
                 return await interaction.editReply(dashData);
             }
             
             if (interaction.customId === 'scam_set_role') {
-                await updateServerConfig(guildId, { scamAlertRoleId: interaction.values[0] });
+                await updateServerConfig(guildId, { scamAlertRoleId: selectedRoles[0] || null });
                 const dashData = await getDashboard(guildId, 'scam_setup');
                 return await interaction.editReply(dashData);
             }
@@ -2345,12 +2321,15 @@ client.on('interactionCreate', async (interaction) => {
                 ]
             });
 
+            // Add ALL staff roles to ticket
+            const staffMentions = [];
             if (conf.staffRoles && conf.staffRoles.length > 0) {
                 conf.staffRoles.forEach(roleId => {
                     ticketChannel.permissionOverwrites.create(roleId, {
                         ViewChannel: true,
                         SendMessages: true
                     });
+                    staffMentions.push(`<@&${roleId}>`);
                 });
             }
 
@@ -2390,7 +2369,13 @@ client.on('interactionCreate', async (interaction) => {
                     .setStyle(ButtonStyle.Danger)
             );
 
-            await ticketChannel.send({ content: `${user} 👋`, embeds: [embed], components: [row] });
+            // ===== PING ALL STAFF ROLES =====
+            const staffPing = staffMentions.length > 0 ? `\n\n${staffMentions.join(' ')}` : '';
+            await ticketChannel.send({ 
+                content: `${user} 👋${staffPing}`, 
+                embeds: [embed], 
+                components: [row] 
+            });
             
             return interaction.editReply({
                 embeds: [new EmbedBuilder()
@@ -2473,7 +2458,7 @@ client.on('interactionCreate', async (interaction) => {
     }
 
     if (interaction.customId === 'claim_ticket') {
-        if (!hasStaffRole(interaction.member, conf) && !hasAdminRole(interaction.member, conf)) {
+        if (!isAuthorized(interaction.member, conf)) {
             return interaction.reply({ 
                 content: '❌ Staff access only.',
                 flags: 64
@@ -2564,7 +2549,7 @@ client.on('interactionCreate', async (interaction) => {
     }
 
     if (interaction.customId === 'close_ticket') {
-        if (!hasStaffRole(interaction.member, conf) && !hasAdminRole(interaction.member, conf)) {
+        if (!isAuthorized(interaction.member, conf)) {
             return interaction.reply({ 
                 content: '❌ Staff access only.',
                 flags: 64
