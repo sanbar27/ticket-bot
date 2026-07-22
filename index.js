@@ -170,63 +170,43 @@ const afkUsers = new Map();
 const userVouchCounts = new Map();
 const scamAlertCooldowns = new Map();
 
-// ===================== UPDATED TRANSACTIONS - MORE VARIETY =====================
 const FAUX_TRADES = [
-    // Roblox
     "ROBUX: 5000 R$ W/T TAX FOR 20$ LTC",
     "ROBUX: 10k R$ CLEAN FOR 42$ SOL",
     "ROBUX: 2500 R$ AFTER TAX FOR 10$ PAYPAL",
     "ROBUX: 20k R$ CLEAN FOR 80$ BTC",
     "ROBUX: 1000 R$ FOR 4$ LTC",
     "ROBUX: 50k R$ FOR 200$ BTC",
-    
-    // Blox Fruits
     "BLOX FRUITS: PERM BUDDHA FOR 20$ LTC",
     "BLOX FRUITS: KITSUNE FRUIT FOR 15$ SOL",
     "BLOX FRUITS: PERM DRAGON FOR 35$ BTC",
     "BLOX FRUITS: PERM KITSUNE FOR 24$ LTC",
     "BLOX FRUITS: FRUIT STORAGE FOR 10$ PAYPAL",
     "BLOX FRUITS: 2X MASTERY FOR 8$ LTC",
-    
-    // Adopt Me
     "ADOPT ME: FR JUNGLE EGG PET FOR 15$ SOL",
     "ADOPT ME: NFR SHADOW DRAGON FOR 80$ BTC",
     "ADOPT ME: MEGA FROST DRAGON FOR 120$ SOL",
     "ADOPT ME: FR GIRAFFE FOR 45$ LTC",
     "ADOPT ME: NFR OWL FOR 60$ PAYPAL",
     "ADOPT ME: MEGA UNICORN FOR 30$ BTC",
-    
-    // Valorant
     "VALORANT: 2500 VP CARD FOR 15$ PAYPAL",
     "VALORANT: 1000 VP FOR 6$ LTC",
     "VALORANT: RADIANITE PACK FOR 20$ SOL",
-    
-    // Discord
     "DISCORD: 1 YEAR NITRO BOOST FOR 12$ CARD",
     "DISCORD: 3 MONTHS NITRO FOR 4$ LTC",
     "DISCORD: 1 MONTH NITRO FOR 1.5$ SOL",
-    
-    // Steam
     "STEAM: 50$ GIFT CARD FOR 40$ CRYPTO",
     "STEAM: 20$ GIFT CARD FOR 16$ LTC",
     "STEAM: 100$ GIFT CARD FOR 80$ BTC",
-    
-    // Grow A Garden
     "GROW A GARDEN: DRAGONFLY FOR 10$ LTC",
     "GROW A GARDEN: EXCLUSIVE WINGS FOR 25$ SOL",
     "GROW A GARDEN: RARE ITEM SET FOR 40$ PAYPAL",
-    
-    // Pet Simulator X
     "PET SIM X: HUGE PET FOR 30$ BTC",
     "PET SIM X: EXCLUSIVE EGG FOR 12$ LTC",
     "PET SIM X: TITANIC PET FOR 200$ SOL",
-    
-    // MM2
     "MM2: GODLY KNIFE SET FOR 50$ BTC",
     "MM2: CHROMAS SET FOR 75$ SOL",
     "MM2: LEGENDARY SET FOR 25$ LTC",
-    
-    // General
     "CRYPTO: 0.5 BTC FOR 45000$ USDT",
     "PAYPAL: 100$ FOR 0.0012 BTC",
     "WISE: 200$ FOR 180$ LTC"
@@ -272,7 +252,6 @@ async function triggerAntiNuke(guild, executorId, actionType, targetId) {
     return true;
 }
 
-// ===================== CLEAN AUTO-VOUCH - NO BUTTONS, NO TIME, NO TRUST SCORE =====================
 async function generateFakeVouch(guildId) {
     const guild = client.guilds.cache.get(guildId);
     if (!guild) return;
@@ -300,7 +279,6 @@ async function generateFakeVouch(guildId) {
 
         const trade = FAUX_TRADES[Math.floor(Math.random() * FAUX_TRADES.length)];
 
-        // Clean vouch embed - NO buttons, NO time, NO trust score
         const embed = new EmbedBuilder()
             .setColor('#2ECC71')
             .setTitle('✅ Vouch Verified')
@@ -312,9 +290,7 @@ async function generateFakeVouch(guildId) {
             .setThumbnail(randomTarget.displayAvatarURL({ dynamic: true, size: 256 }))
             .setFooter({ text: 'Cosmic™ Vouch System', iconURL: guild.iconURL({ dynamic: true }) });
 
-        // Just send the embed with NO buttons
         await channel.send({ embeds: [embed] });
-
         console.log(`✅ Auto-vouch posted in ${guild.name}`);
     } catch (e) {
         console.error('Error generating vouch:', e);
@@ -489,21 +465,21 @@ async function getDashboard(guildId, pageName) {
                         .setCustomId('mm_set_staff')
                         .setPlaceholder('Add Staff Role')
                         .setMinValues(0)
-                        .setMaxValues(10)
+                        .setMaxValues(10)  // Allow multiple selection
                 ),
                 new ActionRowBuilder().addComponents(
                     new RoleSelectMenuBuilder()
                         .setCustomId('mm_set_dashboard')
                         .setPlaceholder('Add Dashboard Role')
                         .setMinValues(0)
-                        .setMaxValues(10)
+                        .setMaxValues(10)  // Allow multiple selection
                 ),
                 new ActionRowBuilder().addComponents(
                     new RoleSelectMenuBuilder()
                         .setCustomId('mm_set_admin')
                         .setPlaceholder('Add Admin Role')
                         .setMinValues(0)
-                        .setMaxValues(10)
+                        .setMaxValues(10)  // Allow multiple selection
                 ),
                 new ActionRowBuilder().addComponents(
                     new ButtonBuilder()
@@ -1138,7 +1114,6 @@ client.on('interactionCreate', async (interaction) => {
 
     // ===== SCAM ALERT BUTTONS =====
     if (interaction.customId?.startsWith('scam_join_') || interaction.customId?.startsWith('scam_leave_')) {
-        // CRITICAL: Defer first to prevent timeout!
         await interaction.deferUpdate();
         
         try {
@@ -1401,58 +1376,66 @@ client.on('interactionCreate', async (interaction) => {
         }
     }
 
-    // ===== ROLE SELECT MENUS =====
+    // ===== ROLE SELECT MENUS - FIXED FOR MULTIPLE SELECTION =====
     if (interaction.isRoleSelectMenu()) {
         await interaction.deferUpdate();
         
         try {
+            const selectedRoles = interaction.values; // This is an array of selected role IDs
+            const current = getServerConfig(guildId);
+            
             if (interaction.customId === 'mm_set_staff') {
-                const current = getServerConfig(guildId);
                 const roles = current.staffRoles || [];
-                if (!roles.includes(interaction.values[0])) {
-                    roles.push(interaction.values[0]);
-                    await updateServerConfig(guildId, { staffRoles: roles });
-                }
+                // Add all selected roles that aren't already in the list
+                selectedRoles.forEach(roleId => {
+                    if (!roles.includes(roleId)) {
+                        roles.push(roleId);
+                    }
+                });
+                await updateServerConfig(guildId, { staffRoles: roles });
                 const dashData = await getDashboard(guildId, 'mm_roles');
                 return await interaction.editReply(dashData);
             }
             
             if (interaction.customId === 'mm_set_dashboard') {
-                const current = getServerConfig(guildId);
                 const roles = current.dashboardRoles || [];
-                if (!roles.includes(interaction.values[0])) {
-                    roles.push(interaction.values[0]);
-                    await updateServerConfig(guildId, { dashboardRoles: roles });
-                }
+                selectedRoles.forEach(roleId => {
+                    if (!roles.includes(roleId)) {
+                        roles.push(roleId);
+                    }
+                });
+                await updateServerConfig(guildId, { dashboardRoles: roles });
                 const dashData = await getDashboard(guildId, 'mm_roles');
                 return await interaction.editReply(dashData);
             }
             
             if (interaction.customId === 'mm_set_admin') {
-                const current = getServerConfig(guildId);
                 const roles = current.adminRoles || [];
-                if (!roles.includes(interaction.values[0])) {
-                    roles.push(interaction.values[0]);
-                    await updateServerConfig(guildId, { adminRoles: roles });
-                }
+                selectedRoles.forEach(roleId => {
+                    if (!roles.includes(roleId)) {
+                        roles.push(roleId);
+                    }
+                });
+                await updateServerConfig(guildId, { adminRoles: roles });
                 const dashData = await getDashboard(guildId, 'mm_roles');
                 return await interaction.editReply(dashData);
             }
             
             if (interaction.customId === 'v_set_target') {
-                await updateServerConfig(guildId, { targetRoleId: interaction.values[0] });
+                // For single role selection (target role)
+                await updateServerConfig(guildId, { targetRoleId: selectedRoles[0] || null });
                 const dashData = await getDashboard(guildId, 'vouch_setup');
                 return await interaction.editReply(dashData);
             }
             
             if (interaction.customId === 'v_set_giver') {
-                await updateServerConfig(guildId, { giverRoleId: interaction.values[0] });
+                await updateServerConfig(guildId, { giverRoleId: selectedRoles[0] || null });
                 const dashData = await getDashboard(guildId, 'vouch_setup');
                 return await interaction.editReply(dashData);
             }
             
             if (interaction.customId === 'scam_set_role') {
-                await updateServerConfig(guildId, { scamAlertRoleId: interaction.values[0] });
+                await updateServerConfig(guildId, { scamAlertRoleId: selectedRoles[0] || null });
                 const dashData = await getDashboard(guildId, 'scam_setup');
                 return await interaction.editReply(dashData);
             }
@@ -1624,10 +1607,6 @@ client.on('interactionCreate', async (interaction) => {
             );
         return interaction.showModal(modal);
     }
-
-    // Vouch Confirm - Removed
-    // Vouch Report - Removed  
-    // Vouch Back - Removed
 
     // ===== TICKET BUTTONS =====
     if (interaction.customId === 'create_ticket') {
