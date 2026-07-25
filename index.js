@@ -2015,7 +2015,7 @@ client.on('interactionCreate', async (interaction) => {
         return interaction.showModal(modal);
     }
 
-    // ===== CREATE TICKET =====
+    // ===== CREATE TICKET - FIXED VISIBILITY =====
     if (interaction.customId === 'create_ticket') {
         await interaction.deferReply({ flags: 64 });
         const user = interaction.user;
@@ -2041,17 +2041,18 @@ client.on('interactionCreate', async (interaction) => {
         }
 
         try {
+            // ===== CREATE CHANNEL WITH @EVERYONE DENIED =====
             const ticketChannel = await interaction.guild.channels.create({
                 name: `mm-${cleanName}`,
                 type: ChannelType.GuildText,
                 parent: conf.ticketCategoryId || null,
                 permissionOverwrites: [
                     {
-                        id: interaction.guild.id,
-                        deny: [PermissionFlagsBits.ViewChannel]
+                        id: interaction.guild.id, // @everyone
+                        deny: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages]
                     },
                     {
-                        id: user.id,
+                        id: user.id, // Ticket creator
                         allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages]
                     }
                 ]
@@ -2150,7 +2151,6 @@ client.on('interactionCreate', async (interaction) => {
                             .setEmoji('🛡️')
                     );
                     
-                    // ===== PING STAFF ROLES IN ALERT CHANNEL =====
                     const pingMsg = staffMentions.length > 0 ? staffMentions.join(' ') : '';
                     
                     await alertChan.send({
@@ -2184,7 +2184,6 @@ client.on('interactionCreate', async (interaction) => {
                     .setEmoji('🗑️')
             );
 
-            // ===== PING STAFF IN THE TICKET TOO =====
             const staffPing = staffMentions.length > 0 ? staffMentions.join(' ') + ' - New ticket' : '';
             
             await ticketChannel.send({ 
