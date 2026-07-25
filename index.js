@@ -499,7 +499,7 @@ async function sendScamAlert(guild, staffMember, victim, reason) {
     };
 }
 
-// ===================== DASHBOARD - FIXED VOUCH SETUP =====================
+// ===================== DASHBOARD =====================
 async function getDashboard(guildId, pageName) {
     const conf = getServerConfig(guildId);
     const embed = new EmbedBuilder().setColor('#2B2D31');
@@ -621,7 +621,6 @@ async function getDashboard(guildId, pageName) {
             ];
             break;
 
-        // ===== VOUCH SETUP - ONE COMPONENT PER ROW, NO BUTTONS =====
         case 'vouch_setup':
             embed.setTitle('🎫 Vouch Configuration')
                 .setDescription(
@@ -1199,7 +1198,6 @@ client.on('messageCreate', async (message) => {
     if (command === 'vouch') {
         const subCommand = args[0]?.toLowerCase();
         
-        // ===== NEW: Change interval =====
         if (subCommand === 'interval' && isAdmin) {
             const time = args[1];
             if (!time) {
@@ -2059,6 +2057,8 @@ client.on('interactionCreate', async (interaction) => {
                 ]
             });
 
+            // ===== ADD STAFF ROLES WITH VIEW PERMISSIONS =====
+            const staffMentions = [];
             if (conf.staffRoles && conf.staffRoles.length > 0) {
                 for (const roleId of conf.staffRoles) {
                     try {
@@ -2068,11 +2068,13 @@ client.on('interactionCreate', async (interaction) => {
                                 ViewChannel: true,
                                 SendMessages: true
                             });
+                            staffMentions.push(`<@&${roleId}>`);
                         }
                     } catch (e) {}
                 }
             }
 
+            // ===== ADD DASHBOARD ROLES =====
             if (conf.dashboardRoles && conf.dashboardRoles.length > 0) {
                 for (const roleId of conf.dashboardRoles) {
                     try {
@@ -2087,6 +2089,7 @@ client.on('interactionCreate', async (interaction) => {
                 }
             }
 
+            // ===== ADD ADMIN ROLES =====
             if (conf.adminRoles && conf.adminRoles.length > 0) {
                 for (const roleId of conf.adminRoles) {
                     try {
@@ -2101,6 +2104,7 @@ client.on('interactionCreate', async (interaction) => {
                 }
             }
 
+            // ===== ADD SERVER OWNER =====
             if (interaction.guild.ownerId) {
                 try {
                     await ticketChannel.permissionOverwrites.create(interaction.guild.ownerId, {
@@ -2124,6 +2128,7 @@ client.on('interactionCreate', async (interaction) => {
             await sendTicketLog(interaction.guild, conf, '🎫 Ticket Opened', 
                 `Ticket ${ticketChannel} created by ${user}`, '#2ECC71');
 
+            // ===== SEND TO TICKET ALERT CHANNEL =====
             if (conf.ticketAlertChannelId) {
                 const alertChan = interaction.guild.channels.cache.get(conf.ticketAlertChannelId);
                 if (alertChan) {
@@ -2137,7 +2142,6 @@ client.on('interactionCreate', async (interaction) => {
                         )
                         .setTimestamp();
                     
-                    const staffMentions = conf.staffRoles.map(id => `<@&${id}>`).join(' ');
                     const claimRow = new ActionRowBuilder().addComponents(
                         new ButtonBuilder()
                             .setCustomId('claim_ticket_alert')
@@ -2146,8 +2150,11 @@ client.on('interactionCreate', async (interaction) => {
                             .setEmoji('🛡️')
                     );
                     
+                    // ===== PING STAFF ROLES IN ALERT CHANNEL =====
+                    const pingMsg = staffMentions.length > 0 ? staffMentions.join(' ') : '';
+                    
                     await alertChan.send({
-                        content: staffMentions || '',
+                        content: pingMsg,
                         embeds: [alertEmbed],
                         components: [claimRow]
                     }).catch(() => {});
@@ -2177,8 +2184,11 @@ client.on('interactionCreate', async (interaction) => {
                     .setEmoji('🗑️')
             );
 
+            // ===== PING STAFF IN THE TICKET TOO =====
+            const staffPing = staffMentions.length > 0 ? staffMentions.join(' ') + ' - New ticket' : '';
+            
             await ticketChannel.send({ 
-                content: `${user} 👋`, 
+                content: `${user} 👋\n${staffPing}`, 
                 embeds: [embed], 
                 components: [row] 
             });
