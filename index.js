@@ -2015,7 +2015,7 @@ client.on('interactionCreate', async (interaction) => {
         return interaction.showModal(modal);
     }
 
-    // ===== CREATE TICKET - FIXED VISIBILITY =====
+    // ===== CREATE TICKET - COMPLETELY FIXED =====
     if (interaction.customId === 'create_ticket') {
         await interaction.deferReply({ flags: 64 });
         const user = interaction.user;
@@ -2045,7 +2045,7 @@ client.on('interactionCreate', async (interaction) => {
             const ticketChannel = await interaction.guild.channels.create({
                 name: `mm-${cleanName}`,
                 type: ChannelType.GuildText,
-                parent: conf.ticketCategoryId || null,
+                parent: null, // NO CATEGORY - prevents inheritance issues
                 permissionOverwrites: [
                     {
                         id: interaction.guild.id, // @everyone
@@ -2071,7 +2071,9 @@ client.on('interactionCreate', async (interaction) => {
                             });
                             staffMentions.push(`<@&${roleId}>`);
                         }
-                    } catch (e) {}
+                    } catch (e) {
+                        console.log(`Failed to add staff role ${roleId}:`, e.message);
+                    }
                 }
             }
 
@@ -2086,7 +2088,9 @@ client.on('interactionCreate', async (interaction) => {
                                 SendMessages: true
                             });
                         }
-                    } catch (e) {}
+                    } catch (e) {
+                        console.log(`Failed to add dashboard role ${roleId}:`, e.message);
+                    }
                 }
             }
 
@@ -2101,7 +2105,9 @@ client.on('interactionCreate', async (interaction) => {
                                 SendMessages: true
                             });
                         }
-                    } catch (e) {}
+                    } catch (e) {
+                        console.log(`Failed to add admin role ${roleId}:`, e.message);
+                    }
                 }
             }
 
@@ -2112,7 +2118,9 @@ client.on('interactionCreate', async (interaction) => {
                         ViewChannel: true,
                         SendMessages: true
                     });
-                } catch (e) {}
+                } catch (e) {
+                    console.log('Failed to add owner:', e.message);
+                }
             }
 
             const ticketData = {
