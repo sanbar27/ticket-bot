@@ -910,7 +910,7 @@ async function lockTicketChannel(channel, ticket, claimant, conf) {
 
         await channel.permissionOverwrites.set([]);
 
-        await channel.permissionOverwrites.create(channel.guild.id, {
+        await channel.permissionOverwrites.create(channel.guild.roles.everyone.id, {
             SendMessages: false
         });
 
@@ -955,7 +955,7 @@ async function unlockTicketChannel(channel, conf) {
         
         await channel.permissionOverwrites.set([]);
 
-        await channel.permissionOverwrites.create(channel.guild.id, {
+        await channel.permissionOverwrites.create(channel.guild.roles.everyone.id, {
             ViewChannel: true,
             SendMessages: true
         });
@@ -2015,13 +2015,14 @@ client.on('interactionCreate', async (interaction) => {
         return interaction.showModal(modal);
     }
 
-    // ===== CREATE TICKET - COMPLETELY FIXED =====
+    // ===== CREATE TICKET - FINAL FIX USING guild.roles.everyone.id =====
     if (interaction.customId === 'create_ticket') {
         await interaction.deferReply({ flags: 64 });
         const user = interaction.user;
+        const guild = interaction.guild;
         
         const cleanName = user.username.toLowerCase().replace(/[^a-z0-9]/g, '');
-        const existingTicket = interaction.guild.channels.cache.find(c => c.name === `mm-${cleanName}`);
+        const existingTicket = guild.channels.cache.find(c => c.name === `mm-${cleanName}`);
         if (existingTicket) {
             return interaction.editReply({
                 embeds: [new EmbedBuilder()
@@ -2041,95 +2042,65 @@ client.on('interactionCreate', async (interaction) => {
         }
 
         try {
-            // ===== CREATE CHANNEL - NO CATEGORY, @EVERYONE DENIED =====
-            const ticketChannel = await interaction.guild.channels.create({
+            // ===== BUILD PERMISSION OVERWRITES =====
+            // 1. Deny @everyone - using guild.roles.everyone.id
+            const permissionOverwrites = [
+                {
+                    id: guild.roles.everyone.id,
+                    deny: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages]
+                },
+                {
+                    id: user.id,
+                    allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages]
+                }
+            ];
+
+            // 2. Collect all authorized role IDs
+            const authorizedRoleIds = [
+                ...(conf.staffRoles || []),
+                ...(conf.dashboardRoles || []),
+                ...(conf.adminRoles || [])
+            ];
+            const uniqueRoleIds = [...new Set(authorizedRoleIds)];
+
+            // 3. Grant access to each authorized role
+            for (const roleId of uniqueRoleIds) {
+                if (guild.roles.cache.has(roleId)) {
+                    permissionOverwrites.push({
+                        id: roleId,
+                        allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages]
+                    });
+                }
+            }
+
+            // 4. Add server owner
+            if (guild.ownerId) {
+                permissionOverwrites.push({
+                    id: guild.ownerId,
+                    allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages]
+                });
+            }
+
+            // ===== CREATE THE CHANNEL =====
+            const ticketChannel = await guild.channels.create({
                 name: `mm-${cleanName}`,
                 type: ChannelType.GuildText,
-                parent: null, // NO CATEGORY - prevents inheritance
-                permissionOverwrites: [
-                    {
-                        id: interaction.guild.id, // @everyone
-                        deny: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages]
-                    },
-                    {
-                        id: user.id, // Ticket creator ONLY
-                        allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages]
-                    }
-                ]
+                parent: null, // NO CATEGORY to prevent inheritance
+                permissionOverwrites: permissionOverwrites
             });
 
-            // ===== ADD STAFF ROLES WITH VIEW PERMISSIONS =====
+            // ===== COLLECT STAFF MENTIONS =====
             const staffMentions = [];
             if (conf.staffRoles && conf.staffRoles.length > 0) {
                 for (const roleId of conf.staffRoles) {
-                    try {
-                        const role = interaction.guild.roles.cache.get(roleId);
-                        if (role) {
-                            await ticketChannel.permissionOverwrites.create(roleId, {
-                                ViewChannel: true,
-                                SendMessages: true
-                            });
-                            staffMentions.push(`<@&${roleId}>`);
-                        }
-                    } catch (e) {
-                        console.log(`Failed to add staff role ${roleId}:`, e.message);
+                    const role = guild.roles.cache.get(roleId);
+                    if (role) {
+                        staffMentions.push(`<@&${roleId}>`);
                     }
                 }
             }
 
-            // ===== ADD DASHBOARD ROLES =====
-            if (conf.dashboardRoles && conf.dashboardRoles.length > 0) {
-                for (const roleId of conf.dashboardRoles) {
-                    try {
-                        const role = interaction.guild.roles.cache.get(roleId);
-                        if (role) {
-                            await ticketChannel.permissionOverwrites.create(roleId, {
-                                ViewChannel: true,
-                                SendMessages: true
-                            });
-                        }
-                    } catch (e) {
-                        console.log(`Failed to add dashboard role ${roleId}:`, e.message);
-                    }
-                }
-            }
-
-            // ===== ADD ADMIN ROLES =====
-            if (conf.adminRoles && conf.adminRoles.length > 0) {
-                for (const roleId of conf.adminRoles) {
-                    try {
-                        const role = interaction.guild.roles.cache.get(roleId);
-                        if (role) {
-                            await ticketChannel.permissionOverwrites.create(roleId, {
-                                ViewChannel: true,
-                                SendMessages: true
-                            });
-                        }
-                    } catch (e) {
-                        console.log(`Failed to add admin role ${roleId}:`, e.message);
-                    }
-                }
-            }
-
-            // ===== ADD SERVER OWNER =====
-            if (interaction.guild.ownerId) {
-                try {
-                    await ticketChannel.permissionOverwrites.create(interaction.guild.ownerId, {
-                        ViewChannel: true,
-                        SendMessages: true
-                    });
-                } catch (e) {
-                    console.log('Failed to add owner:', e.message);
-                }
-            }
-
-            // ===== LOCK PERMISSIONS TO REMOVE CATEGORY INHERITANCE =====
-            try {
-                await ticketChannel.lockPermissions();
-            } catch (e) {
-                console.log('Could not lock permissions:', e.message);
-            }
-
+            // ===== STORE TICKET DATA =====
             const ticketData = {
                 creatorId: user.id,
                 claimedBy: null,
@@ -2141,12 +2112,12 @@ client.on('interactionCreate', async (interaction) => {
             setTicketData(ticketChannel.id, ticketData);
             console.log(`✅ Ticket stored: ${ticketChannel.id} for user ${user.id}`);
 
-            await sendTicketLog(interaction.guild, conf, '🎫 Ticket Opened', 
+            await sendTicketLog(guild, conf, '🎫 Ticket Opened', 
                 `Ticket ${ticketChannel} created by ${user}`, '#2ECC71');
 
             // ===== SEND TO TICKET ALERT CHANNEL =====
             if (conf.ticketAlertChannelId) {
-                const alertChan = interaction.guild.channels.cache.get(conf.ticketAlertChannelId);
+                const alertChan = guild.channels.cache.get(conf.ticketAlertChannelId);
                 if (alertChan) {
                     const alertEmbed = new EmbedBuilder()
                         .setColor('#2ECC71')
@@ -2176,6 +2147,7 @@ client.on('interactionCreate', async (interaction) => {
                 }
             }
 
+            // ===== SEND WELCOME MESSAGE IN TICKET =====
             const embed = new EmbedBuilder()
                 .setColor('#5865F2')
                 .setTitle('🎫 Ticket Created')
