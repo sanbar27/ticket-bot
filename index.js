@@ -109,8 +109,6 @@ function getServerConfig(guildId) {
             intervalTime: 60000,
             running: false,
             whitelists: {},
-            vouchMinAmount: 1,
-            vouchMaxAmount: 5,
             scamAlertRoleId: null,
             scamAlertLogChannel: null,
             vouchLogChannel: null,
@@ -141,8 +139,6 @@ async function updateServerConfig(guildId, updates) {
             intervalTime: 60000,
             running: false,
             whitelists: {},
-            vouchMinAmount: 1,
-            vouchMaxAmount: 5,
             scamAlertRoleId: null,
             scamAlertLogChannel: null,
             vouchLogChannel: null,
@@ -503,6 +499,7 @@ async function sendScamAlert(guild, staffMember, victim, reason) {
     };
 }
 
+// ===================== DASHBOARD - FIXED VOUCH SETUP =====================
 async function getDashboard(guildId, pageName) {
     const conf = getServerConfig(guildId);
     const embed = new EmbedBuilder().setColor('#2B2D31');
@@ -624,11 +621,11 @@ async function getDashboard(guildId, pageName) {
             ];
             break;
 
+        // ===== VOUCH SETUP - ONE COMPONENT PER ROW, NO BUTTONS =====
         case 'vouch_setup':
             embed.setTitle('🎫 Vouch Configuration')
                 .setDescription(
-                    `**Current Interval:** \`${formatTime(conf.intervalTime)}\`\n` +
-                    `**Vouch Amount Range:** ${conf.vouchMinAmount} - ${conf.vouchMaxAmount}\n\n` +
+                    `**Current Interval:** \`${formatTime(conf.intervalTime)}\` *(Change with \`!vouch interval 30s\`)*\n\n` +
                     `**Target Role (Receives):** ${conf.targetRoleId ? `<@&${conf.targetRoleId}>` : '❌ Not Set'}\n` +
                     `**Giver Role (Gives):** ${conf.giverRoleId ? `<@&${conf.giverRoleId}>` : '❌ Not Set'}\n` +
                     `**Vouch Channel:** ${conf.vouchChannelId ? `<#${conf.vouchChannelId}>` : '❌ Not Set'}\n` +
@@ -639,12 +636,12 @@ async function getDashboard(guildId, pageName) {
                 new ActionRowBuilder().addComponents(
                     new RoleSelectMenuBuilder()
                         .setCustomId('v_set_target')
-                        .setPlaceholder('Role to RECEIVE Vouch')
+                        .setPlaceholder('Target Role (Receives)')
                 ),
                 new ActionRowBuilder().addComponents(
                     new RoleSelectMenuBuilder()
                         .setCustomId('v_set_giver')
-                        .setPlaceholder('Role to GIVE Vouch')
+                        .setPlaceholder('Giver Role (Gives)')
                 ),
                 new ActionRowBuilder().addComponents(
                     new ChannelSelectMenuBuilder()
@@ -657,16 +654,6 @@ async function getDashboard(guildId, pageName) {
                         .setCustomId('v_set_log')
                         .setPlaceholder('Vouch Log Channel')
                         .addChannelTypes(ChannelType.GuildText)
-                ),
-                new ActionRowBuilder().addComponents(
-                    new ButtonBuilder()
-                        .setCustomId('change_vouch_interval')
-                        .setLabel('⏱️ Set Interval')
-                        .setStyle(ButtonStyle.Primary),
-                    new ButtonBuilder()
-                        .setCustomId('change_vouch_amount')
-                        .setLabel('🔢 Set Amount Range')
-                        .setStyle(ButtonStyle.Secondary)
                 )
             ];
             break;
@@ -726,7 +713,8 @@ async function getDashboard(guildId, pageName) {
                     `**🎫 Vouch Commands**\n` +
                     `> \`/vouch @user <trade> [screenshot]\` - Submit a vouch\n` +
                     `> \`/vouches [user]\` - Check user's vouches\n` +
-                    `> \`!addvouch @user <amount>\` - Add vouches to user (admin)\n\n` +
+                    `> \`!addvouch @user <amount>\` - Add vouches to user (admin)\n` +
+                    `> \`!vouch interval <time>\` - Change auto-vouch interval (admin)\n\n` +
                     `**🛡️ Admin Commands**\n` +
                     `> \`${conf.prefix}setup-ticket\` - Create ticket button\n` +
                     `> \`${conf.prefix}ontop @user <reason>\` - 🚨 SCAM ALERT system\n\n` +
@@ -1211,6 +1199,40 @@ client.on('messageCreate', async (message) => {
     if (command === 'vouch') {
         const subCommand = args[0]?.toLowerCase();
         
+        // ===== NEW: Change interval =====
+        if (subCommand === 'interval' && isAdmin) {
+            const time = args[1];
+            if (!time) {
+                return message.reply({
+                    embeds: [new EmbedBuilder()
+                        .setColor('#FEE75C')
+                        .setDescription('❌ Usage: `!vouch interval 30s`\nExamples: `30s`, `1m`, `5m`, `1h`, `1d`')
+                    ]
+                });
+            }
+            const ms = parseTime(time);
+            if (!ms || ms < 5000) {
+                return message.reply({
+                    embeds: [new EmbedBuilder()
+                        .setColor('#ED4245')
+                        .setDescription('❌ Invalid interval. Use: `30s`, `1m`, `5m`, etc. (minimum 5s)')
+                    ]
+                });
+            }
+            await updateServerConfig(guildId, { intervalTime: ms });
+            const updatedConf = getServerConfig(guildId);
+            if (updatedConf.running) {
+                stopVouchLoop(guildId);
+                startVouchLoop(guildId);
+            }
+            return message.reply({
+                embeds: [new EmbedBuilder()
+                    .setColor('#2ECC71')
+                    .setDescription(`✅ Interval set to ${formatTime(ms)}`)
+                ]
+            });
+        }
+        
         if (subCommand === 'start' && isAdmin) {
             const conf = getServerConfig(guildId);
             if (!conf.vouchChannelId || !conf.targetRoleId || !conf.giverRoleId) {
@@ -1277,6 +1299,7 @@ client.on('messageCreate', async (message) => {
                     `\`${prefix}vouch start\` - Start auto-vouch\n` +
                     `\`${prefix}vouch stop\` - Stop auto-vouch\n` +
                     `\`${prefix}vouch status\` - Check vouch status\n` +
+                    `\`${prefix}vouch interval <time>\` - Change interval (e.g. 30s, 1m)\n` +
                     `\`${prefix}addvouch @user <amount>\` - Add vouches to user\n` +
                     `\`${prefix}vouches @user\` - Check user's vouches`
                 )
@@ -1692,44 +1715,6 @@ client.on('interactionCreate', async (interaction) => {
             return interaction.update(dashData);
         }
 
-        if (interaction.customId === 'interval_modal') {
-            const inputTime = interaction.fields.getTextInputValue('interval_input');
-            const ms = parseTime(inputTime);
-            if (!ms || ms < 5000) {
-                return interaction.reply({ 
-                    content: '❌ Invalid format or too short (minimum 5s). Use: 30s, 1m, 5m, etc.',
-                    flags: 64
-                });
-            }
-            
-            await updateServerConfig(guildId, { intervalTime: ms });
-            const updatedConf = getServerConfig(guildId);
-            if (updatedConf.running) startVouchLoop(guildId);
-            
-            const dashData = await getDashboard(guildId, 'vouch_setup');
-            return interaction.update(dashData);
-        }
-
-        if (interaction.customId === 'amount_modal') {
-            const min = parseInt(interaction.fields.getTextInputValue('min_amount'));
-            const max = parseInt(interaction.fields.getTextInputValue('max_amount'));
-            
-            if (isNaN(min) || isNaN(max) || min < 1 || max < min) {
-                return interaction.reply({
-                    content: '❌ Invalid amount. Min must be >= 1 and Max must be >= Min.',
-                    flags: 64
-                });
-            }
-            
-            await updateServerConfig(guildId, { 
-                vouchMinAmount: min, 
-                vouchMaxAmount: max 
-            });
-            
-            const dashData = await getDashboard(guildId, 'vouch_setup');
-            return interaction.update(dashData);
-        }
-
         if (interaction.customId === 'scam_edit_messages_modal') {
             const alertMsg = interaction.fields.getTextInputValue('alert_message');
             const joinMsg = interaction.fields.getTextInputValue('join_message');
@@ -1930,48 +1915,6 @@ client.on('interactionCreate', async (interaction) => {
 
     // ===== BUTTONS =====
     if (!interaction.isButton()) return;
-
-    if (interaction.customId === 'change_vouch_interval') {
-        const modal = new ModalBuilder()
-            .setCustomId('interval_modal')
-            .setTitle('Change Auto-Vouch Speed')
-            .addComponents(
-                new ActionRowBuilder().addComponents(
-                    new TextInputBuilder()
-                        .setCustomId('interval_input')
-                        .setLabel('Interval (e.g., 30s, 1m, 2h)')
-                        .setStyle(TextInputStyle.Short)
-                        .setRequired(true)
-                        .setPlaceholder('30s')
-                )
-            );
-        return interaction.showModal(modal);
-    }
-
-    if (interaction.customId === 'change_vouch_amount') {
-        const modal = new ModalBuilder()
-            .setCustomId('amount_modal')
-            .setTitle('Set Vouch Amount Range')
-            .addComponents(
-                new ActionRowBuilder().addComponents(
-                    new TextInputBuilder()
-                        .setCustomId('min_amount')
-                        .setLabel('Minimum Vouch Amount')
-                        .setStyle(TextInputStyle.Short)
-                        .setRequired(true)
-                        .setPlaceholder('1')
-                ),
-                new ActionRowBuilder().addComponents(
-                    new TextInputBuilder()
-                        .setCustomId('max_amount')
-                        .setLabel('Maximum Vouch Amount')
-                        .setStyle(TextInputStyle.Short)
-                        .setRequired(true)
-                        .setPlaceholder('5')
-                )
-            );
-        return interaction.showModal(modal);
-    }
 
     if (interaction.customId === 'scam_edit_messages') {
         const modal = new ModalBuilder()
