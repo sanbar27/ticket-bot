@@ -380,6 +380,9 @@ async function generateFakeVouch(guildId) {
                 `**To:** <@${randomTarget.id}>\n\n` +
                 `📦 **Transaction:** \`${trade}\``
             )
+            .addFields(
+                { name: '📎 Screenshot', value: '❌ No Screenshot (Auto-Vouch)', inline: true }
+            )
             .setThumbnail(randomTarget.displayAvatarURL({ dynamic: true, size: 256 }))
             .setFooter({ text: 'Cosmic™ Vouch System', iconURL: guild.iconURL({ dynamic: true }) });
 
@@ -844,10 +847,8 @@ async function handleVouchSubmit(interaction) {
 
     const conf = getServerConfig(interaction.guild.id);
     
-    // Add the vouch
     const newCount = addVouchCount(target.id, 1);
 
-    // Create response embed - PUBLIC (not ephemeral)
     const embed = new EmbedBuilder()
         .setColor('#2ECC71')
         .setTitle('✅ Vouch Submitted!')
@@ -857,7 +858,8 @@ async function handleVouchSubmit(interaction) {
             `**Trade:** \`${trade}\``
         )
         .addFields(
-            { name: '📊 New Vouch Count', value: `${newCount} vouches`, inline: true }
+            { name: '📊 New Vouch Count', value: `${newCount} vouches`, inline: true },
+            { name: '📎 Screenshot', value: screenshot ? '✅ Attached' : '❌ No Screenshot', inline: true }
         )
         .setTimestamp()
         .setFooter({ text: 'Cosmic™ Vouch System', iconURL: interaction.guild.iconURL({ dynamic: true }) });
@@ -866,7 +868,6 @@ async function handleVouchSubmit(interaction) {
         embed.setImage(screenshot.url);
     }
 
-    // Send to vouch log channel if configured (PUBLIC - visible to everyone)
     if (conf.vouchLogChannel) {
         const vouchChan = interaction.guild.channels.cache.get(conf.vouchLogChannel);
         if (vouchChan) {
@@ -879,7 +880,8 @@ async function handleVouchSubmit(interaction) {
                     `**Trade:** \`${trade}\``
                 )
                 .addFields(
-                    { name: '📊 New Total', value: `${newCount} vouches`, inline: true }
+                    { name: '📊 New Total', value: `${newCount} vouches`, inline: true },
+                    { name: '📎 Screenshot', value: screenshot ? '✅ Attached' : '❌ No Screenshot', inline: true }
                 )
                 .setTimestamp()
                 .setFooter({ text: 'Cosmic™ Vouch System', iconURL: interaction.guild.iconURL({ dynamic: true }) });
@@ -891,12 +893,9 @@ async function handleVouchSubmit(interaction) {
             await vouchChan.send({ embeds: [logEmbed] }).catch((err) => {
                 console.error('Failed to send vouch log:', err);
             });
-        } else {
-            console.log(`⚠️ Vouch log channel ${conf.vouchLogChannel} not found!`);
         }
     }
 
-    // Send PUBLIC reply (not ephemeral) - everyone can see
     await interaction.reply({ embeds: [embed] });
 }
 
@@ -1300,7 +1299,6 @@ client.on('interactionCreate', async (interaction) => {
         const isStaff = hasStaffRole(member, conf);
         const isAdmin = member.permissions.has(PermissionFlagsBits.Administrator);
 
-        // /claim
         if (commandName === 'claim') {
             if (!isStaff && !isAdmin) {
                 return interaction.reply({
@@ -1339,7 +1337,6 @@ client.on('interactionCreate', async (interaction) => {
 
             await lockTicketChannel(interaction.channel, ticket, interaction.user, conf);
 
-            // Update the ticket message buttons
             const row = new ActionRowBuilder().addComponents(
                 new ButtonBuilder()
                     .setCustomId(`unclaim_${interaction.user.id}`)
@@ -1369,7 +1366,6 @@ client.on('interactionCreate', async (interaction) => {
             return;
         }
 
-        // /unclaim
         if (commandName === 'unclaim') {
             if (!isStaff && !isAdmin) {
                 return interaction.reply({
@@ -1415,7 +1411,6 @@ client.on('interactionCreate', async (interaction) => {
 
             await unlockTicketChannel(interaction.channel, conf);
 
-            // Restore original buttons
             const row = new ActionRowBuilder().addComponents(
                 new ButtonBuilder()
                     .setCustomId('claim_ticket')
@@ -1445,7 +1440,6 @@ client.on('interactionCreate', async (interaction) => {
             return;
         }
 
-        // /close
         if (commandName === 'close') {
             if (!isStaff && !isAdmin) {
                 return interaction.reply({
@@ -1478,7 +1472,6 @@ client.on('interactionCreate', async (interaction) => {
             return;
         }
 
-        // /add
         if (commandName === 'add') {
             if (!isStaff && !isAdmin) {
                 return interaction.reply({
@@ -1545,7 +1538,6 @@ client.on('interactionCreate', async (interaction) => {
             return;
         }
 
-        // /vouch
         if (commandName === 'vouch') {
             if (!isAuthorized(interaction.member, conf) && !hasVouchVerifyRole(interaction.member, conf)) {
                 return interaction.reply({
@@ -1557,7 +1549,6 @@ client.on('interactionCreate', async (interaction) => {
             return;
         }
 
-        // /vouches
         if (commandName === 'vouches') {
             await handleVouches(interaction);
             return;
@@ -1893,37 +1884,37 @@ client.on('interactionCreate', async (interaction) => {
         
         try {
             if (interaction.customId === 'mm_set_category') {
-                await updateServerConfig(guildId, { ticketCategoryId: interaction.values[0] });
+                await updateServerConfig(guildId, { ticketCategoryId: interaction.values[0] || null });
                 const dashData = await getDashboard(guildId, 'mm_channels');
                 return await interaction.editReply(dashData);
             }
             
             if (interaction.customId === 'mm_set_logs') {
-                await updateServerConfig(guildId, { logChannelId: interaction.values[0] });
+                await updateServerConfig(guildId, { logChannelId: interaction.values[0] || null });
                 const dashData = await getDashboard(guildId, 'mm_channels');
                 return await interaction.editReply(dashData);
             }
             
             if (interaction.customId === 'mm_set_alert') {
-                await updateServerConfig(guildId, { ticketAlertChannelId: interaction.values[0] });
+                await updateServerConfig(guildId, { ticketAlertChannelId: interaction.values[0] || null });
                 const dashData = await getDashboard(guildId, 'mm_channels');
                 return await interaction.editReply(dashData);
             }
             
             if (interaction.customId === 'v_set_chan') {
-                await updateServerConfig(guildId, { vouchChannelId: interaction.values[0] });
+                await updateServerConfig(guildId, { vouchChannelId: interaction.values[0] || null });
                 const dashData = await getDashboard(guildId, 'vouch_setup');
                 return await interaction.editReply(dashData);
             }
             
             if (interaction.customId === 'v_set_log') {
-                await updateServerConfig(guildId, { vouchLogChannel: interaction.values[0] });
+                await updateServerConfig(guildId, { vouchLogChannel: interaction.values[0] || null });
                 const dashData = await getDashboard(guildId, 'vouch_setup');
                 return await interaction.editReply(dashData);
             }
             
             if (interaction.customId === 'scam_set_log') {
-                await updateServerConfig(guildId, { scamAlertLogChannel: interaction.values[0] });
+                await updateServerConfig(guildId, { scamAlertLogChannel: interaction.values[0] || null });
                 const dashData = await getDashboard(guildId, 'scam_setup');
                 return await interaction.editReply(dashData);
             }
@@ -2348,7 +2339,6 @@ client.on('interactionCreate', async (interaction) => {
             components: []
         });
 
-        // Update the ticket channel buttons
         const row = new ActionRowBuilder().addComponents(
             new ButtonBuilder()
                 .setCustomId(`unclaim_${interaction.user.id}`)
