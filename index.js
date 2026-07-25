@@ -2041,18 +2041,18 @@ client.on('interactionCreate', async (interaction) => {
         }
 
         try {
-            // ===== CREATE CHANNEL WITH @EVERYONE DENIED =====
+            // ===== CREATE CHANNEL - NO CATEGORY, @EVERYONE DENIED =====
             const ticketChannel = await interaction.guild.channels.create({
                 name: `mm-${cleanName}`,
                 type: ChannelType.GuildText,
-                parent: null, // NO CATEGORY - prevents inheritance issues
+                parent: null, // NO CATEGORY - prevents inheritance
                 permissionOverwrites: [
                     {
                         id: interaction.guild.id, // @everyone
                         deny: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages]
                     },
                     {
-                        id: user.id, // Ticket creator
+                        id: user.id, // Ticket creator ONLY
                         allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages]
                     }
                 ]
@@ -2121,6 +2121,13 @@ client.on('interactionCreate', async (interaction) => {
                 } catch (e) {
                     console.log('Failed to add owner:', e.message);
                 }
+            }
+
+            // ===== LOCK PERMISSIONS TO REMOVE CATEGORY INHERITANCE =====
+            try {
+                await ticketChannel.lockPermissions();
+            } catch (e) {
+                console.log('Could not lock permissions:', e.message);
             }
 
             const ticketData = {
