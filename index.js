@@ -903,27 +903,33 @@ async function handleVouches(interaction) {
     await interaction.reply({ embeds: [embed], flags: 64 });
 }
 
-// ===================== LOCK TICKET =====================
+// ===================== LOCK TICKET - FIXED =====================
 async function lockTicketChannel(channel, ticket, claimant, conf) {
     try {
         console.log(`🔒 Locking ticket ${channel.id}...`);
 
+        // Reset all permissions
         await channel.permissionOverwrites.set([]);
 
+        // DENY @everyone from sending messages (but KEEP view permissions for authorized roles)
         await channel.permissionOverwrites.create(channel.guild.roles.everyone.id, {
-            SendMessages: false
+            SendMessages: false,
+            ViewChannel: false
         });
 
+        // ALLOW the claimant
         await channel.permissionOverwrites.create(claimant.id, {
             SendMessages: true,
             ViewChannel: true
         });
 
+        // ALLOW the ticket creator
         await channel.permissionOverwrites.create(ticket.creatorId, {
             SendMessages: true,
             ViewChannel: true
         });
 
+        // ALLOW added users
         if (ticket.addedUsers && ticket.addedUsers.length > 0) {
             for (const userId of ticket.addedUsers) {
                 await channel.permissionOverwrites.create(userId, {
@@ -933,12 +939,58 @@ async function lockTicketChannel(channel, ticket, claimant, conf) {
             }
         }
 
+        // ALLOW staff roles
+        if (conf.staffRoles && conf.staffRoles.length > 0) {
+            for (const roleId of conf.staffRoles) {
+                try {
+                    await channel.permissionOverwrites.create(roleId, {
+                        SendMessages: true,
+                        ViewChannel: true
+                    });
+                } catch (e) {}
+            }
+        }
+
+        // ALLOW dashboard roles
+        if (conf.dashboardRoles && conf.dashboardRoles.length > 0) {
+            for (const roleId of conf.dashboardRoles) {
+                try {
+                    await channel.permissionOverwrites.create(roleId, {
+                        SendMessages: true,
+                        ViewChannel: true
+                    });
+                } catch (e) {}
+            }
+        }
+
+        // ALLOW admin roles
+        if (conf.adminRoles && conf.adminRoles.length > 0) {
+            for (const roleId of conf.adminRoles) {
+                try {
+                    await channel.permissionOverwrites.create(roleId, {
+                        SendMessages: true,
+                        ViewChannel: true
+                    });
+                } catch (e) {}
+            }
+        }
+
+        // ALLOW server owner
+        if (channel.guild.ownerId) {
+            try {
+                await channel.permissionOverwrites.create(channel.guild.ownerId, {
+                    SendMessages: true,
+                    ViewChannel: true
+                });
+            } catch (e) {}
+        }
+
         console.log(`✅ Ticket ${channel.id} locked successfully!`);
         
         await channel.send({
             embeds: [new EmbedBuilder()
                 .setColor('#2ECC71')
-                .setDescription('🔒 **Ticket locked.** Only the claimant, ticket creator, and added users can talk.')
+                .setDescription('🔒 **Ticket locked.** Only the claimant, ticket creator, added users, and staff can talk.')
             ]
         }).catch(() => {});
 
@@ -953,13 +1005,16 @@ async function unlockTicketChannel(channel, conf) {
     try {
         console.log(`🔓 Unlocking ticket ${channel.id}...`);
         
+        // Reset all permissions
         await channel.permissionOverwrites.set([]);
 
+        // ALLOW @everyone to view and send
         await channel.permissionOverwrites.create(channel.guild.roles.everyone.id, {
             ViewChannel: true,
             SendMessages: true
         });
 
+        // Re-add staff roles
         if (conf.staffRoles && conf.staffRoles.length > 0) {
             for (const roleId of conf.staffRoles) {
                 try {
@@ -2015,7 +2070,7 @@ client.on('interactionCreate', async (interaction) => {
         return interaction.showModal(modal);
     }
 
-    // ===== CREATE TICKET - FINAL FIX USING guild.roles.everyone.id =====
+    // ===== CREATE TICKET - WITH CATEGORY SUPPORT =====
     if (interaction.customId === 'create_ticket') {
         await interaction.deferReply({ flags: 64 });
         const user = interaction.user;
@@ -2043,7 +2098,6 @@ client.on('interactionCreate', async (interaction) => {
 
         try {
             // ===== BUILD PERMISSION OVERWRITES =====
-            // 1. Deny @everyone - using guild.roles.everyone.id
             const permissionOverwrites = [
                 {
                     id: guild.roles.everyone.id,
@@ -2055,7 +2109,7 @@ client.on('interactionCreate', async (interaction) => {
                 }
             ];
 
-            // 2. Collect all authorized role IDs
+            // Collect all authorized role IDs
             const authorizedRoleIds = [
                 ...(conf.staffRoles || []),
                 ...(conf.dashboardRoles || []),
@@ -2063,7 +2117,7 @@ client.on('interactionCreate', async (interaction) => {
             ];
             const uniqueRoleIds = [...new Set(authorizedRoleIds)];
 
-            // 3. Grant access to each authorized role
+            // Grant access to each authorized role
             for (const roleId of uniqueRoleIds) {
                 if (guild.roles.cache.has(roleId)) {
                     permissionOverwrites.push({
@@ -2073,7 +2127,7 @@ client.on('interactionCreate', async (interaction) => {
                 }
             }
 
-            // 4. Add server owner
+            // Add server owner
             if (guild.ownerId) {
                 permissionOverwrites.push({
                     id: guild.ownerId,
@@ -2085,7 +2139,7 @@ client.on('interactionCreate', async (interaction) => {
             const ticketChannel = await guild.channels.create({
                 name: `mm-${cleanName}`,
                 type: ChannelType.GuildText,
-                parent: null, // NO CATEGORY to prevent inheritance
+                parent: conf.ticketCategoryId || null, // USE THE CONFIGURED CATEGORY
                 permissionOverwrites: permissionOverwrites
             });
 
